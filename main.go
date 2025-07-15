@@ -22,7 +22,6 @@ const DatabasePath = ".wsync/database.json"
 
 type Page struct {
 	ID        string    `json:"id"`
-	Title     string    `json:"title"`
 	Content   string    `json:"content"`
 	DateModif time.Time `json:"datemodif"`
 }
@@ -33,8 +32,8 @@ type ShortResponse struct {
 }
 
 type PageData struct {
-	DateModif    time.Time
-	DateDownload time.Time
+	DateModif time.Time
+	DateSync  time.Time
 }
 
 type Database struct {
@@ -60,7 +59,7 @@ func (db Database) HasBeenModified(id string) bool {
 	if err != nil {
 		return false // we do not care of error
 	}
-	return stat.ModTime().After(pageData.DateDownload)
+	return stat.ModTime().After(pageData.DateSync)
 }
 
 func LoadDatabase() (*Database, error) {
@@ -150,7 +149,7 @@ func (co *Connection) Update(page *Page) error {
 	return nil
 }
 
-func (co *Connection) Download(id string) error {
+func Download(co *Connection, id string) error {
 	page, err := co.Get(id)
 	if err != nil {
 		return fmt.Errorf("get page: %w", err)
@@ -171,11 +170,52 @@ func (co *Connection) Download(id string) error {
 	}
 
 	pageData := &PageData{
-		DateModif:    page.DateModif,
-		DateDownload: time.Now(),
+		DateModif: page.DateModif,
+		DateSync:  time.Now(),
 	}
 	database.Pages[id] = pageData
 
+	if err := SaveDatabase(database); err != nil {
+		return fmt.Errorf("save database: %w", err)
+	}
+
+	return nil
+}
+
+func Upload(co *Connection, id string) error {
+
+	database, err := LoadDatabase()
+	if err != nil {
+		return fmt.Errorf("load database: %w", err)
+	}
+
+	pageData, exist := database.Pages[id]
+	if !exist {
+		return fmt.Errorf("ID not in database: %s", id)
+	}
+
+	filename := id + ".md"
+	filename = filepath.Join(StorePath, filename)
+	content, err := os.ReadFile(filename)
+	if err != nil {
+		return fmt.Errorf("read file: %w", err)
+	}
+
+	if !database.HasBeenModified(id) {
+		return fmt.Errorf("page has not been edited locally")
+	}
+
+	page := &Page{
+		ID:        id,
+		Content:   string(content),
+		DateModif: pageData.DateModif,
+	}
+
+	if err := co.Update(page); err != nil {
+		return fmt.Errorf("update page: %w", err)
+	}
+
+	database.Pages[id].DateSync = time.Now()
 	if err := SaveDatabase(database); err != nil {
 		return fmt.Errorf("save database: %w", err)
 	}
@@ -202,13 +242,17 @@ func main() {
 	jar.SetCookies(u, []*http.Cookie{cookie})
 
 	id := os.Args[1]
-	co := Connection{
+	co := &Connection{
 		Client: http.Client{
 			Jar: jar,
 		},
 	}
 
-	if err := co.Download(id); err != nil {
-		log.Fatalln("could not download page:", err)
+	if err := Upload(co, id); err != nil {
+		log.Println("could not upload page:", err)
+	}
+
+	if err := Download(co, id); err != nil {
+		log.Println("could not download updated page:", err)
 	}
 }
