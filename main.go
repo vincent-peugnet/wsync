@@ -2,7 +2,9 @@ package main
 
 import (
 	"encoding/json"
+	"errors"
 	"fmt"
+	"io/fs"
 	"log"
 	"net/http"
 	"net/http/cookiejar"
@@ -15,17 +17,82 @@ import (
 const BaseURL = "http://w.localhost"
 const RememberMe = "eyJ0eXAiOiJKV1QiLCJhbGciOiJIUzI1NiJ9.eyJ1c2VyaWQiOiJ2aW5jZW50Iiwid3Nlc3Npb24iOiJlMDEzYTZmZDc3OWZkMGY4ZDRhZSJ9.2yhdbt1UjNSvA0FxF-u5bKThFgTo_ArG55uhV-xjLhI"
 const StorePath = "/tmp/wsync"
+const DatabasePath = ".wsync/database.json"
 
 type Page struct {
-	ID        string
-	Title     string
-	Content   string
-	Datemodif time.Time
+	ID        string    `json:"id"`
+	Title     string    `json:"title"`
+	Content   string    `json:"content"`
+	DateModif time.Time `json:"datemodif"`
 }
 
 type PageData struct {
-	ID        string
-	Datemodif time.Time
+	DateModif    time.Time
+	DateDownload time.Time
+}
+
+type Database struct {
+	Pages map[string]*PageData
+}
+
+func NewDatabase() *Database {
+	return &Database{
+		Pages: make(map[string]*PageData),
+	}
+}
+
+// HasBeenModified checks if given page has beed modified locally
+func (db Database) HasBeenModified(id string) bool {
+	pageData, exist := db.Pages[id]
+	if !exist {
+		return false // if not in db, we do not care
+	}
+	filename := id + ".md"
+	filename = filepath.Join(StorePath, filename)
+
+	stat, err := os.Stat(filename)
+	if err != nil {
+		return false // we do not care of error
+	}
+	return stat.ModTime().After(pageData.DateDownload)
+}
+
+func LoadDatabase() (*Database, error) {
+	filename := filepath.Join(StorePath, DatabasePath)
+	file, err := os.Open(filename)
+	if err != nil {
+		if errors.Is(err, fs.ErrNotExist) {
+			return NewDatabase(), nil
+		}
+		return nil, fmt.Errorf("read file: %w", err)
+	}
+	defer file.Close()
+
+	decoder := json.NewDecoder(file)
+	var database Database
+	if err := decoder.Decode(&database); err != nil {
+		return nil, fmt.Errorf("decode file: %w", err)
+	}
+	return &database, nil
+}
+
+func SaveDatabase(database *Database) error {
+	filename := filepath.Join(StorePath, DatabasePath)
+	if err := os.MkdirAll(filepath.Dir(filename), 0775); err != nil {
+		return fmt.Errorf("create folder: %w", err)
+	}
+
+	file, err := os.Create(filename)
+	if err != nil {
+		return fmt.Errorf("create file: %w", err)
+	}
+	defer file.Close()
+
+	encoder := json.NewEncoder(file)
+	if err := encoder.Encode(database); err != nil {
+		return fmt.Errorf("encode file: %w", err)
+	}
+	return nil
 }
 
 type Connection struct {
@@ -47,7 +114,7 @@ func (co *Connection) GetPage(id string) (*Page, error) {
 	decoder := json.NewDecoder(res.Body)
 	var page Page
 	if err := decoder.Decode(&page); err != nil {
-		return nil, err
+		return nil, fmt.Errorf("decode page: %w", err)
 	}
 	return &page, nil
 }
@@ -59,9 +126,29 @@ func (co *Connection) Download(id string) error {
 	}
 	filename := id + ".md"
 	filename = filepath.Join(StorePath, filename)
+
+	database, err := LoadDatabase()
+	if err != nil {
+		return fmt.Errorf("load database: %w", err)
+	}
+	if database.HasBeenModified(id) {
+		return fmt.Errorf("local modification")
+	}
+
 	if err := os.WriteFile(filename, []byte(page.Content), 0664); err != nil {
 		return fmt.Errorf("write file: %w", err)
 	}
+
+	pageData := &PageData{
+		DateModif:    page.DateModif,
+		DateDownload: time.Now(),
+	}
+	database.Pages[id] = pageData
+
+	if err := SaveDatabase(database); err != nil {
+		return fmt.Errorf("save database: %w", err)
+	}
+
 	return nil
 }
 
@@ -91,6 +178,6 @@ func main() {
 	}
 
 	if err := co.Download(id); err != nil {
-		log.Fatalln("could not retrieve page:", err)
+		log.Fatalln("could not download page:", err)
 	}
 }
