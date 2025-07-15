@@ -1,6 +1,7 @@
 package main
 
 import (
+	"bytes"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -24,6 +25,11 @@ type Page struct {
 	Title     string    `json:"title"`
 	Content   string    `json:"content"`
 	DateModif time.Time `json:"datemodif"`
+}
+
+// ShortResponse is the API response data
+type ShortResponse struct {
+	Message string `json:"message"`
 }
 
 type PageData struct {
@@ -99,7 +105,7 @@ type Connection struct {
 	Client http.Client
 }
 
-func (co *Connection) GetPage(id string) (*Page, error) {
+func (co *Connection) Get(id string) (*Page, error) {
 	url := fmt.Sprint(BaseURL, "/api/v0/page/", id)
 	res, err := co.Client.Get(url)
 	if err != nil {
@@ -119,8 +125,33 @@ func (co *Connection) GetPage(id string) (*Page, error) {
 	return &page, nil
 }
 
+func (co *Connection) Update(page *Page) error {
+	url := fmt.Sprint(BaseURL, "/api/v0/page/", page.ID, "/update")
+	buf := &bytes.Buffer{}
+	encoder := json.NewEncoder(buf)
+	if err := encoder.Encode(page); err != nil {
+		return fmt.Errorf("encode page: %w", err)
+	}
+	res, err := co.Client.Post(url, "application/json", buf)
+	if err != nil {
+		return nil
+	}
+	defer res.Body.Close()
+
+	if res.StatusCode != 200 {
+		decoder := json.NewDecoder(res.Body)
+		var shortResponse ShortResponse
+		if err := decoder.Decode(&shortResponse); err == nil {
+			return fmt.Errorf("status code: %d - %s", res.StatusCode, shortResponse.Message)
+		}
+		return fmt.Errorf("status code: %d", res.StatusCode)
+	}
+
+	return nil
+}
+
 func (co *Connection) Download(id string) error {
-	page, err := co.GetPage(id)
+	page, err := co.Get(id)
 	if err != nil {
 		return fmt.Errorf("get page: %w", err)
 	}
