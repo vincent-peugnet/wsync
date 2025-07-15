@@ -149,7 +149,7 @@ func (co *Connection) Update(page *Page) error {
 	return nil
 }
 
-func Download(co *Connection, id string) error {
+func Download(co *Connection, database *Database, id string) error {
 	page, err := co.Get(id)
 	if err != nil {
 		return fmt.Errorf("get page: %w", err)
@@ -157,10 +157,6 @@ func Download(co *Connection, id string) error {
 	filename := id + ".md"
 	filename = filepath.Join(StorePath, filename)
 
-	database, err := LoadDatabase()
-	if err != nil {
-		return fmt.Errorf("load database: %w", err)
-	}
 	if database.HasBeenModified(id) {
 		return fmt.Errorf("local modification")
 	}
@@ -175,20 +171,10 @@ func Download(co *Connection, id string) error {
 	}
 	database.Pages[id] = pageData
 
-	if err := SaveDatabase(database); err != nil {
-		return fmt.Errorf("save database: %w", err)
-	}
-
 	return nil
 }
 
-func Upload(co *Connection, id string) error {
-
-	database, err := LoadDatabase()
-	if err != nil {
-		return fmt.Errorf("load database: %w", err)
-	}
-
+func Upload(co *Connection, database *Database, id string) error {
 	pageData, exist := database.Pages[id]
 	if !exist {
 		return fmt.Errorf("ID not in database: %s", id)
@@ -216,9 +202,6 @@ func Upload(co *Connection, id string) error {
 	}
 
 	database.Pages[id].DateSync = time.Now()
-	if err := SaveDatabase(database); err != nil {
-		return fmt.Errorf("save database: %w", err)
-	}
 
 	return nil
 }
@@ -241,6 +224,11 @@ func main() {
 	jar, _ := cookiejar.New(nil)
 	jar.SetCookies(u, []*http.Cookie{cookie})
 
+	database, err := LoadDatabase()
+	if err != nil {
+		log.Fatalln("load database: %w", err)
+	}
+
 	id := os.Args[1]
 	co := &Connection{
 		Client: http.Client{
@@ -248,11 +236,15 @@ func main() {
 		},
 	}
 
-	if err := Upload(co, id); err != nil {
+	if err := Upload(co, database, id); err != nil {
 		log.Println("could not upload page:", err)
 	}
 
-	if err := Download(co, id); err != nil {
+	if err := Download(co, database, id); err != nil {
 		log.Println("could not download updated page:", err)
+	}
+
+	if err := SaveDatabase(database); err != nil {
+		log.Fatalln("save database: %w", err)
 	}
 }
