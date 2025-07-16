@@ -11,6 +11,9 @@ import (
 	"path/filepath"
 	"time"
 	"wsync/api"
+
+	"github.com/charmbracelet/bubbles/textinput"
+	"github.com/charmbracelet/huh"
 )
 
 var repoPath string
@@ -179,10 +182,23 @@ func initialize(args []string) {
 		log.Fatalln("directory is not empty")
 	}
 
+	var baseURL string
 	if len(args) < 1 {
-		log.Fatalln("init sub command need an URL argument")
+		baseURLForm := huh.NewForm(
+			huh.NewGroup(
+				huh.NewInput().
+					Title("What is the URL where W is installed ?").
+					Value(&baseURL).
+					Placeholder("https://example.com"),
+			),
+		)
+
+		if err := baseURLForm.Run(); err != nil {
+			log.Fatal(err)
+		}
+	} else {
+		baseURL = args[0]
 	}
-	baseURL := args[0]
 	client := api.NewClient(baseURL)
 
 	if err := client.Health(); err != nil {
@@ -193,26 +209,36 @@ func initialize(args []string) {
 	database.Config.BaseURL = baseURL
 	SaveDatabase(database)
 
-	fmt.Println("⭐️ repository successfully initalized")
-}
+	log.Println("🔌 connected to W")
 
-func login(args []string) {
-	if len(args) < 2 {
-		log.Fatalln("sync sub command need two arguments: USER PASSWORD")
+	var username string
+	var password string
+
+	credentialForm := huh.NewForm(
+		huh.NewGroup(
+			huh.NewInput().
+				Title("Username").
+				Value(&username),
+			huh.NewInput().
+				EchoMode(huh.EchoMode(textinput.EchoPassword)).
+				Title("Password").
+				Value(&password),
+		),
+	)
+
+	if err := credentialForm.Run(); err != nil {
+		log.Fatal(err)
 	}
 
-	database := LoadDatabase()
-
-	client := api.NewClient(database.Config.BaseURL)
-
-	token, err := client.Auth(args[0], args[1])
+	token, err := client.Auth(username, password)
 	if err != nil {
-		log.Fatalln("login:", err)
+		log.Fatal(err)
 	}
 
 	SaveToken(token)
 
-	log.Println("successfully logged in 🎉")
+	log.Println("🔓️ logged in")
+	fmt.Println("⭐️ repository initalized")
 }
 
 func sync(args []string) {
@@ -252,8 +278,6 @@ func main() {
 		switch args[0] {
 		case "init":
 			initialize(args[1:])
-		case "login":
-			login(args[1:])
 		case "sync":
 			sync(args[1:])
 		default:
