@@ -45,7 +45,7 @@ func NewClient(baseURL string) *Client {
 	}
 
 	return &Client{
-		BaseURL:   baseURL,
+		BaseURL:   strings.TrimRight(baseURL, "/"),
 		transport: transport,
 		httpClient: http.Client{
 			Transport: transport,
@@ -98,7 +98,6 @@ func (c *Client) Update(page *Page) error {
 }
 
 func (c *Client) Auth(username string, password string) (string, error) {
-
 	url := fmt.Sprint(c.BaseURL, "/api/v0/auth")
 
 	credentials := fmt.Sprintf(`{"username": %q, "password": %q}`, username, password)
@@ -122,6 +121,18 @@ func (c *Client) Auth(username string, password string) (string, error) {
 	}
 
 	return tokenResponse.Token, nil
+}
+
+func (c *Client) Health() error {
+	url := fmt.Sprint(c.BaseURL, "/api/v0/health")
+
+	res, err := c.httpClient.Get(url)
+	if err != nil {
+		return err
+	}
+	defer res.Body.Close()
+
+	return chekResponse(res)
 }
 
 func chekResponse(res *http.Response) error {

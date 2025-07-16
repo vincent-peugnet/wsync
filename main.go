@@ -22,7 +22,10 @@ type PageData struct {
 }
 
 type Database struct {
-	Pages map[string]*PageData
+	Pages  map[string]*PageData
+	Config struct {
+		BaseURL string
+	}
 }
 
 func NewDatabase() *Database {
@@ -54,14 +57,14 @@ func LoadDatabase() *Database {
 		if errors.Is(err, fs.ErrNotExist) {
 			return NewDatabase()
 		}
-		log.Fatalln("load database: %w", err)
+		log.Fatalln("load database:", err)
 	}
 	defer file.Close()
 
 	decoder := json.NewDecoder(file)
 	var database Database
 	if err := decoder.Decode(&database); err != nil {
-		log.Fatalln("load database: %w", err)
+		log.Fatalln("load database:", err)
 	}
 	return &database
 }
@@ -69,29 +72,29 @@ func LoadDatabase() *Database {
 func SaveDatabase(database *Database) {
 	filename := filepath.Join(StorePath, DatabasePath)
 	if err := os.MkdirAll(filepath.Dir(filename), 0775); err != nil {
-		log.Fatalln("save database: %w", err)
+		log.Fatalln("save database:", err)
 	}
 
 	file, err := os.Create(filename)
 	if err != nil {
-		log.Fatalln("save database: %w", err)
+		log.Fatalln("save database:", err)
 	}
 	defer file.Close()
 
 	encoder := json.NewEncoder(file)
 	if err := encoder.Encode(database); err != nil {
-		log.Fatalln("save database: %w", err)
+		log.Fatalln("save database:", err)
 	}
 }
 
 func SaveToken(token string) {
 	filename := filepath.Join(StorePath, TokenPath)
 	if err := os.MkdirAll(filepath.Dir(filename), 0775); err != nil {
-		log.Fatalln("save token: %w", err)
+		log.Fatalln("save token:", err)
 	}
 
 	if err := os.WriteFile(filename, []byte(token), 0640); err != nil {
-		log.Fatalln("save token: %w", err)
+		log.Fatalln("save token:", err)
 	}
 }
 
@@ -99,7 +102,7 @@ func LoadToken() string {
 	filename := filepath.Join(StorePath, TokenPath)
 	token, err := os.ReadFile(filename)
 	if err != nil {
-		log.Fatalln("load token: %w", err)
+		log.Fatalln("load token:", err)
 	}
 	return string(token)
 }
@@ -161,16 +164,46 @@ func Upload(co *api.Client, database *Database, id string) error {
 	return nil
 }
 
-func login(args []string) {
-	if len(args) < 2 {
-		log.Fatalln("sync sub command need two arguments: user, password")
+func initialize(args []string) {
+
+	files, err := os.ReadDir(StorePath)
+	if err != nil {
+		log.Fatalln("read folder:", err)
 	}
 
-	client := api.NewClient("http://w.localhost")
+	if len(files) > 0 {
+		log.Fatalln("directory is not empty")
+	}
+
+	if len(args) < 1 {
+		log.Fatalln("init sub command need an URL argument")
+	}
+	baseURL := args[0]
+	client := api.NewClient(baseURL)
+
+	if err := client.Health(); err != nil {
+		log.Fatalln("❌ERROR: there is no W at this adress.", err)
+	}
+
+	database := LoadDatabase()
+	database.Config.BaseURL = baseURL
+	SaveDatabase(database)
+
+	fmt.Println("⭐️ repository successfully initalized")
+}
+
+func login(args []string) {
+	if len(args) < 2 {
+		log.Fatalln("sync sub command need two arguments: USER PASSWORD")
+	}
+
+	database := LoadDatabase()
+
+	client := api.NewClient(database.Config.BaseURL)
 
 	token, err := client.Auth(args[0], args[1])
 	if err != nil {
-		log.Fatalln("login: %w", err)
+		log.Fatalln("login:", err)
 	}
 
 	SaveToken(token)
@@ -191,7 +224,7 @@ func sync(args []string) {
 	database := LoadDatabase()
 	token := LoadToken()
 
-	client := api.NewClient("http://w.localhost")
+	client := api.NewClient(database.Config.BaseURL)
 	client.SetToken(string(token))
 
 	if err := Upload(client, database, id); err != nil {
@@ -210,6 +243,8 @@ func main() {
 	args := os.Args[1:]
 	if len(args) >= 1 {
 		switch args[0] {
+		case "init":
+			initialize(args[1:])
 		case "login":
 			login(args[1:])
 		case "sync":
