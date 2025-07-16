@@ -1,35 +1,19 @@
 package main
 
 import (
-	"bytes"
 	"encoding/json"
 	"errors"
 	"fmt"
 	"io/fs"
 	"log"
-	"net/http"
-	"net/http/cookiejar"
-	"net/url"
 	"os"
 	"path/filepath"
 	"time"
+	"wsync/api"
 )
 
-const BaseURL = "http://w.localhost"
-const RememberMe = "eyJ0eXAiOiJKV1QiLCJhbGciOiJIUzI1NiJ9.eyJ1c2VyaWQiOiJ2aW5jZW50Iiwid3Nlc3Npb24iOiJlMDEzYTZmZDc3OWZkMGY4ZDRhZSJ9.2yhdbt1UjNSvA0FxF-u5bKThFgTo_ArG55uhV-xjLhI"
 const StorePath = "/tmp/wsync"
 const DatabasePath = ".wsync/database.json"
-
-type Page struct {
-	ID        string    `json:"id"`
-	Content   string    `json:"content"`
-	DateModif time.Time `json:"datemodif"`
-}
-
-// ShortResponse is the API response data
-type ShortResponse struct {
-	Message string `json:"message"`
-}
 
 type PageData struct {
 	DateModif time.Time
@@ -100,56 +84,7 @@ func SaveDatabase(database *Database) error {
 	return nil
 }
 
-type Connection struct {
-	Client http.Client
-}
-
-func (co *Connection) Get(id string) (*Page, error) {
-	url := fmt.Sprint(BaseURL, "/api/v0/page/", id)
-	res, err := co.Client.Get(url)
-	if err != nil {
-		return nil, err
-	}
-	defer res.Body.Close()
-
-	if res.StatusCode != 200 {
-		return nil, fmt.Errorf("status code: %d", res.StatusCode)
-	}
-
-	decoder := json.NewDecoder(res.Body)
-	var page Page
-	if err := decoder.Decode(&page); err != nil {
-		return nil, fmt.Errorf("decode page: %w", err)
-	}
-	return &page, nil
-}
-
-func (co *Connection) Update(page *Page) error {
-	url := fmt.Sprint(BaseURL, "/api/v0/page/", page.ID, "/update")
-	buf := &bytes.Buffer{}
-	encoder := json.NewEncoder(buf)
-	if err := encoder.Encode(page); err != nil {
-		return fmt.Errorf("encode page: %w", err)
-	}
-	res, err := co.Client.Post(url, "application/json", buf)
-	if err != nil {
-		return nil
-	}
-	defer res.Body.Close()
-
-	if res.StatusCode != 200 {
-		decoder := json.NewDecoder(res.Body)
-		var shortResponse ShortResponse
-		if err := decoder.Decode(&shortResponse); err == nil {
-			return fmt.Errorf("status code: %d - %s", res.StatusCode, shortResponse.Message)
-		}
-		return fmt.Errorf("status code: %d", res.StatusCode)
-	}
-
-	return nil
-}
-
-func Download(co *Connection, database *Database, id string) error {
+func Download(co *api.Client, database *Database, id string) error {
 	page, err := co.Get(id)
 	if err != nil {
 		return fmt.Errorf("get page: %w", err)
@@ -174,7 +109,7 @@ func Download(co *Connection, database *Database, id string) error {
 	return nil
 }
 
-func Upload(co *Connection, database *Database, id string) error {
+func Upload(co *api.Client, database *Database, id string) error {
 	pageData, exist := database.Pages[id]
 	if !exist {
 		return fmt.Errorf("ID not in database: %s", id)
@@ -191,7 +126,7 @@ func Upload(co *Connection, database *Database, id string) error {
 		return fmt.Errorf("page has not been edited locally")
 	}
 
-	page := &Page{
+	page := &api.Page{
 		ID:        id,
 		Content:   string(content),
 		DateModif: pageData.DateModif,
@@ -212,35 +147,20 @@ func main() {
 		log.Fatalln("could not create store:", err)
 	}
 
-	cookie := &http.Cookie{
-		Name:  "rememberme",
-		Value: RememberMe,
-	}
-	u, err := url.Parse(BaseURL)
-	if err != nil {
-		log.Fatalln("wrong BaseURL:", err)
-	}
-
-	jar, _ := cookiejar.New(nil)
-	jar.SetCookies(u, []*http.Cookie{cookie})
-
 	database, err := LoadDatabase()
 	if err != nil {
 		log.Fatalln("load database: %w", err)
 	}
 
 	id := os.Args[1]
-	co := &Connection{
-		Client: http.Client{
-			Jar: jar,
-		},
-	}
 
-	if err := Upload(co, database, id); err != nil {
+	client := api.NewClient()
+
+	if err := Upload(client, database, id); err != nil {
 		log.Println("could not upload page:", err)
 	}
 
-	if err := Download(co, database, id); err != nil {
+	if err := Download(client, database, id); err != nil {
 		log.Println("could not download updated page:", err)
 	}
 
