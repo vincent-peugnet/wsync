@@ -3,6 +3,7 @@ package main
 import (
 	"encoding/json"
 	"errors"
+	"flag"
 	"fmt"
 	"io/fs"
 	"log"
@@ -12,9 +13,12 @@ import (
 	"wsync/api"
 )
 
-const StorePath = "/tmp/wsync"
-const DatabasePath = ".wsync/database.json"
-const TokenPath = ".wsync/token"
+var repoPath string
+
+const (
+	DatabasePath = ".wsync/database.json"
+	TokenPath    = ".wsync/token"
+)
 
 type PageData struct {
 	DateModif time.Time
@@ -41,7 +45,7 @@ func (db Database) HasBeenModified(id string) bool {
 		return false // if not in db, we do not care
 	}
 	filename := id + ".md"
-	filename = filepath.Join(StorePath, filename)
+	filename = filepath.Join(repoPath, filename)
 
 	stat, err := os.Stat(filename)
 	if err != nil {
@@ -51,7 +55,7 @@ func (db Database) HasBeenModified(id string) bool {
 }
 
 func LoadDatabase() *Database {
-	filename := filepath.Join(StorePath, DatabasePath)
+	filename := filepath.Join(repoPath, DatabasePath)
 	file, err := os.Open(filename)
 	if err != nil {
 		if errors.Is(err, fs.ErrNotExist) {
@@ -70,7 +74,7 @@ func LoadDatabase() *Database {
 }
 
 func SaveDatabase(database *Database) {
-	filename := filepath.Join(StorePath, DatabasePath)
+	filename := filepath.Join(repoPath, DatabasePath)
 	if err := os.MkdirAll(filepath.Dir(filename), 0775); err != nil {
 		log.Fatalln("save database:", err)
 	}
@@ -88,7 +92,7 @@ func SaveDatabase(database *Database) {
 }
 
 func SaveToken(token string) {
-	filename := filepath.Join(StorePath, TokenPath)
+	filename := filepath.Join(repoPath, TokenPath)
 	if err := os.MkdirAll(filepath.Dir(filename), 0775); err != nil {
 		log.Fatalln("save token:", err)
 	}
@@ -99,7 +103,7 @@ func SaveToken(token string) {
 }
 
 func LoadToken() string {
-	filename := filepath.Join(StorePath, TokenPath)
+	filename := filepath.Join(repoPath, TokenPath)
 	token, err := os.ReadFile(filename)
 	if err != nil {
 		log.Fatalln("load token:", err)
@@ -113,7 +117,7 @@ func Download(co *api.Client, database *Database, id string) error {
 		return fmt.Errorf("get page: %w", err)
 	}
 	filename := id + ".md"
-	filename = filepath.Join(StorePath, filename)
+	filename = filepath.Join(repoPath, filename)
 
 	if database.HasBeenModified(id) {
 		return fmt.Errorf("local modification")
@@ -139,7 +143,7 @@ func Upload(co *api.Client, database *Database, id string) error {
 	}
 
 	filename := id + ".md"
-	filename = filepath.Join(StorePath, filename)
+	filename = filepath.Join(repoPath, filename)
 	content, err := os.ReadFile(filename)
 	if err != nil {
 		return fmt.Errorf("read file: %w", err)
@@ -166,7 +170,7 @@ func Upload(co *api.Client, database *Database, id string) error {
 
 func initialize(args []string) {
 
-	files, err := os.ReadDir(StorePath)
+	files, err := os.ReadDir(repoPath)
 	if err != nil {
 		log.Fatalln("read folder:", err)
 	}
@@ -217,7 +221,7 @@ func sync(args []string) {
 	}
 	id := args[0]
 
-	if err := os.MkdirAll(StorePath, 0775); err != nil {
+	if err := os.MkdirAll(repoPath, 0775); err != nil {
 		log.Fatalln("could not create store:", err)
 	}
 
@@ -240,7 +244,10 @@ func sync(args []string) {
 
 func main() {
 
-	args := os.Args[1:]
+	flag.StringVar(&repoPath, "C", ".", "set the working directory")
+	flag.Parse()
+
+	args := flag.Args()
 	if len(args) >= 1 {
 		switch args[0] {
 		case "init":
