@@ -42,7 +42,7 @@ func NewDatabase() *Database {
 }
 
 // HasBeenModified checks if given page has beed modified locally
-func (db Database) HasBeenModified(id string) bool {
+func (db *Database) HasBeenModified(id string) bool {
 	pageData, exist := db.Pages[id]
 	if !exist {
 		return false // if not in db, we do not care
@@ -55,6 +55,16 @@ func (db Database) HasBeenModified(id string) bool {
 		return false // we do not care of error
 	}
 	return stat.ModTime().After(pageData.DateSync)
+}
+
+func (db Database) EditedPages() []string {
+	var editedPages []string
+	for id := range db.Pages {
+		if db.HasBeenModified(id) {
+			editedPages = append(editedPages, id)
+		}
+	}
+	return editedPages
 }
 
 func LoadDatabase() *Database {
@@ -242,27 +252,37 @@ func initialize(args []string) {
 }
 
 func sync(args []string) {
-	if len(args) < 1 {
-		log.Fatalln("sync sub command need a page ID argument")
-	}
-	id := args[0]
-
-	if err := os.MkdirAll(repoPath, 0775); err != nil {
-		log.Fatalln("could not create store:", err)
-	}
-
 	database := LoadDatabase()
 	token := LoadToken()
 
 	client := api.NewClient(database.Config.BaseURL)
 	client.SetToken(string(token))
 
-	if err := Upload(client, database, id); err != nil {
-		log.Println("could not upload page:", err)
-	}
+	if len(args) < 1 {
+		if err := os.MkdirAll(repoPath, 0775); err != nil {
+			log.Fatalln("could not create store:", err)
+		}
+		editedPages := database.EditedPages()
 
-	if err := Download(client, database, id); err != nil {
-		log.Println("could not download updated page:", err)
+		for _, id := range editedPages {
+			if err := Upload(client, database, id); err != nil {
+				log.Println("could not upload page:", id, err)
+			} else {
+				fmt.Println("⬆️ page uploaded:", id)
+			}
+		}
+
+		// TODO: try to download all modified pages from the server
+	} else {
+		id := args[0]
+
+		if err := Upload(client, database, id); err != nil {
+			log.Println("could not upload page:", err)
+		}
+
+		if err := Download(client, database, id); err != nil {
+			log.Println("could not download updated page:", err)
+		}
 	}
 
 	SaveDatabase(database)
