@@ -14,6 +14,7 @@ import (
 
 const StorePath = "/tmp/wsync"
 const DatabasePath = ".wsync/database.json"
+const TokenPath = ".wsync/token"
 
 type PageData struct {
 	DateModif time.Time
@@ -46,42 +47,61 @@ func (db Database) HasBeenModified(id string) bool {
 	return stat.ModTime().After(pageData.DateSync)
 }
 
-func LoadDatabase() (*Database, error) {
+func LoadDatabase() *Database {
 	filename := filepath.Join(StorePath, DatabasePath)
 	file, err := os.Open(filename)
 	if err != nil {
 		if errors.Is(err, fs.ErrNotExist) {
-			return NewDatabase(), nil
+			return NewDatabase()
 		}
-		return nil, fmt.Errorf("read file: %w", err)
+		log.Fatalln("load database: %w", err)
 	}
 	defer file.Close()
 
 	decoder := json.NewDecoder(file)
 	var database Database
 	if err := decoder.Decode(&database); err != nil {
-		return nil, fmt.Errorf("decode file: %w", err)
+		log.Fatalln("load database: %w", err)
 	}
-	return &database, nil
+	return &database
 }
 
-func SaveDatabase(database *Database) error {
+func SaveDatabase(database *Database) {
 	filename := filepath.Join(StorePath, DatabasePath)
 	if err := os.MkdirAll(filepath.Dir(filename), 0775); err != nil {
-		return fmt.Errorf("create folder: %w", err)
+		log.Fatalln("save database: %w", err)
 	}
 
 	file, err := os.Create(filename)
 	if err != nil {
-		return fmt.Errorf("create file: %w", err)
+		log.Fatalln("save database: %w", err)
 	}
 	defer file.Close()
 
 	encoder := json.NewEncoder(file)
 	if err := encoder.Encode(database); err != nil {
-		return fmt.Errorf("encode file: %w", err)
+		log.Fatalln("save database: %w", err)
 	}
-	return nil
+}
+
+func SaveToken(token string) {
+	filename := filepath.Join(StorePath, TokenPath)
+	if err := os.MkdirAll(filepath.Dir(filename), 0775); err != nil {
+		log.Fatalln("save token: %w", err)
+	}
+
+	if err := os.WriteFile(filename, []byte(token), 0640); err != nil {
+		log.Fatalln("save token: %w", err)
+	}
+}
+
+func LoadToken() string {
+	filename := filepath.Join(StorePath, TokenPath)
+	token, err := os.ReadFile(filename)
+	if err != nil {
+		log.Fatalln("load token: %w", err)
+	}
+	return string(token)
 }
 
 func Download(co *api.Client, database *Database, id string) error {
@@ -141,20 +161,38 @@ func Upload(co *api.Client, database *Database, id string) error {
 	return nil
 }
 
-func main() {
+func login(args []string) {
+	if len(args) < 2 {
+		log.Fatalln("sync sub command need two arguments: user, password")
+	}
+
+	client := api.NewClient("http://w.localhost")
+
+	token, err := client.Auth(args[0], args[1])
+	if err != nil {
+		log.Fatalln("login: %w", err)
+	}
+
+	SaveToken(token)
+
+	log.Println("successfully logged in 🎉")
+}
+
+func sync(args []string) {
+	if len(args) < 1 {
+		log.Fatalln("sync sub command need a page ID argument")
+	}
+	id := args[0]
 
 	if err := os.MkdirAll(StorePath, 0775); err != nil {
 		log.Fatalln("could not create store:", err)
 	}
 
-	database, err := LoadDatabase()
-	if err != nil {
-		log.Fatalln("load database: %w", err)
-	}
+	database := LoadDatabase()
+	token := LoadToken()
 
-	id := os.Args[1]
-
-	client := api.NewClient()
+	client := api.NewClient("http://w.localhost")
+	client.SetToken(string(token))
 
 	if err := Upload(client, database, id); err != nil {
 		log.Println("could not upload page:", err)
@@ -164,7 +202,23 @@ func main() {
 		log.Println("could not download updated page:", err)
 	}
 
-	if err := SaveDatabase(database); err != nil {
-		log.Fatalln("save database: %w", err)
+	SaveDatabase(database)
+}
+
+func main() {
+
+	args := os.Args[1:]
+	if len(args) >= 1 {
+		switch args[0] {
+		case "login":
+			login(args[1:])
+		case "sync":
+			sync(args[1:])
+		default:
+			log.Fatalln("invalid sub command")
+		}
+	} else {
+		log.Fatalln("command need at least one argument")
 	}
+
 }

@@ -5,13 +5,9 @@ import (
 	"encoding/json"
 	"fmt"
 	"net/http"
-	"net/http/cookiejar"
-	"net/url"
+	"strings"
 	"time"
 )
-
-const BaseURL = "http://w.localhost"
-const RememberMe = "eyJ0eXAiOiJKV1QiLCJhbGciOiJIUzI1NiJ9.eyJ1c2VyaWQiOiJ2aW5jZW50Iiwid3Nlc3Npb24iOiIxNjdlM2VhYTViYjRlNzQxNTQzZSJ9.3ziPbo4cWL8kqIC1Z8RIzUBbAFW6bo661v_3HKH8UOo"
 
 type Page struct {
 	ID        string    `json:"id"`
@@ -24,38 +20,53 @@ type ShortResponse struct {
 	Message string `json:"message"`
 }
 
-type Client struct {
-	HTTPClient http.Client
+type Transport struct {
+	token string
+	trip  http.RoundTripper
 }
 
-func NewClient() *Client {
-
-	cookie := &http.Cookie{
-		Name:  "rememberme",
-		Value: RememberMe,
+func (t *Transport) RoundTrip(request *http.Request) (*http.Response, error) {
+	if t.token != "" {
+		request.Header.Set("Authorization", "Bearer "+t.token)
 	}
-	u, _ := url.Parse(BaseURL)
+	request.Header.Set("User-Agent", "wsync")
+	return t.trip.RoundTrip(request)
+}
 
-	jar, _ := cookiejar.New(nil)
-	jar.SetCookies(u, []*http.Cookie{cookie})
+type Client struct {
+	BaseURL    string
+	transport  *Transport
+	httpClient http.Client
+}
+
+func NewClient(baseURL string) *Client {
+	transport := &Transport{
+		trip: http.DefaultTransport,
+	}
+
 	return &Client{
-		HTTPClient: http.Client{
-			Jar: jar,
+		BaseURL:   baseURL,
+		transport: transport,
+		httpClient: http.Client{
+			Transport: transport,
 		},
 	}
-
 }
 
-func (co *Client) Get(id string) (*Page, error) {
-	url := fmt.Sprint(BaseURL, "/api/v0/page/", id)
-	res, err := co.HTTPClient.Get(url)
+func (c *Client) SetToken(token string) {
+	c.transport.token = token
+}
+
+func (c *Client) Get(id string) (*Page, error) {
+	url := fmt.Sprint(c.BaseURL, "/api/v0/page/", id)
+	res, err := c.httpClient.Get(url)
 	if err != nil {
 		return nil, err
 	}
 	defer res.Body.Close()
 
-	if res.StatusCode != 200 {
-		return nil, fmt.Errorf("status code: %d", res.StatusCode)
+	if err := chekResponse(res); err != nil {
+		return nil, err
 	}
 
 	decoder := json.NewDecoder(res.Body)
@@ -66,19 +77,54 @@ func (co *Client) Get(id string) (*Page, error) {
 	return &page, nil
 }
 
-func (co *Client) Update(page *Page) error {
-	url := fmt.Sprint(BaseURL, "/api/v0/page/", page.ID, "/update")
+func (c *Client) Update(page *Page) error {
+	url := fmt.Sprint(c.BaseURL, "/api/v0/page/", page.ID, "/update")
 	buf := &bytes.Buffer{}
 	encoder := json.NewEncoder(buf)
 	if err := encoder.Encode(page); err != nil {
 		return fmt.Errorf("encode page: %w", err)
 	}
-	res, err := co.HTTPClient.Post(url, "application/json", buf)
+	res, err := c.httpClient.Post(url, "application/json", buf)
 	if err != nil {
-		return nil
+		return err
 	}
 	defer res.Body.Close()
 
+	if err := chekResponse(res); err != nil {
+		return err
+	}
+
+	return nil
+}
+
+func (c *Client) Auth(username string, password string) (string, error) {
+
+	url := fmt.Sprint(c.BaseURL, "/api/v0/auth")
+
+	credentials := fmt.Sprintf(`{"username": %q, "password": %q}`, username, password)
+
+	res, err := c.httpClient.Post(url, "application/json", strings.NewReader(credentials))
+	if err != nil {
+		return "", err
+	}
+	defer res.Body.Close()
+
+	if err := chekResponse(res); err != nil {
+		return "", err
+	}
+
+	var tokenResponse struct {
+		Token string `json:"token"`
+	}
+	decoder := json.NewDecoder(res.Body)
+	if err := decoder.Decode(&tokenResponse); err != nil {
+		return "", fmt.Errorf("decode response: %w", err)
+	}
+
+	return tokenResponse.Token, nil
+}
+
+func chekResponse(res *http.Response) error {
 	if res.StatusCode != 200 {
 		decoder := json.NewDecoder(res.Body)
 		var shortResponse ShortResponse
@@ -87,6 +133,5 @@ func (co *Client) Update(page *Page) error {
 		}
 		return fmt.Errorf("status code: %d", res.StatusCode)
 	}
-
 	return nil
 }
