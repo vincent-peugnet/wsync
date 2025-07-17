@@ -127,6 +127,28 @@ func (c *Client) Update(page *Page) error {
 	return nil
 }
 
+func (c *Client) List() ([]string, error) {
+	url := fmt.Sprint(c.BaseURL, "/api/v0/pages/list")
+	res, err := c.httpClient.Get(url)
+	if err != nil {
+		return nil, err
+	}
+	defer res.Body.Close()
+
+	if err := chekResponse(res); err != nil {
+		return nil, err
+	}
+
+	decoder := json.NewDecoder(res.Body)
+	var list struct {
+		Pages []string `json:"pages"`
+	}
+	if err := decoder.Decode(&list); err != nil {
+		return nil, fmt.Errorf("decode list: %w", err)
+	}
+	return list.Pages, nil
+}
+
 func (c *Client) Query(options *Options) (map[string]*Page, error) {
 	url := fmt.Sprint(c.BaseURL, "/api/v0/pages/query")
 
