@@ -315,6 +315,32 @@ func sync(args []string) {
 	SaveDatabase(database)
 }
 
+func menu() {
+	var action string
+	form := huh.NewForm(
+		huh.NewGroup(
+			huh.NewSelect[string]().
+				Title("What to do ?").
+				Options(
+					huh.NewOption("Init", "init"),
+					huh.NewOption("nothing", "nothing"),
+				).
+				Value(&action),
+		),
+	)
+	err := form.Run()
+	if err != nil {
+		log.Fatal(err)
+	}
+
+	switch action {
+	case "init":
+		initialize(nil)
+	default:
+		fmt.Println("bye bye 👋")
+	}
+}
+
 func main() {
 
 	flag.StringVar(&repoPath, "C", ".", "set the working directory")
