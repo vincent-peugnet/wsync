@@ -15,6 +15,36 @@ type Page struct {
 	DateModif time.Time `json:"datemodif"`
 }
 
+type Options struct {
+	Fields        []string  `json:"fields,omitempty"`
+	SortBy        string    `json:"sortby"`
+	Order         int       `json:"order"`
+	TagFilter     []string  `json:"tagfilter,omitempty"`
+	TagCompare    string    `json:"tagcompare"`
+	TagNot        bool      `json:"tagnot"`
+	AuthorFilter  []string  `json:"authorfilter,omitempty"`
+	AuthorCompare string    `json:"authorcompare"`
+	Secure        int       `json:"secure"`
+	LinkTo        string    `json:"linkto,omitempty"`
+	Invert        bool      `json:"invert"`
+	Limit         int       `json:"limit"`
+	Since         time.Time `json:"since,omitzero"`
+	Until         time.Time `json:"until,omitzero"`
+}
+
+func DefaultOptions() *Options {
+	return &Options{
+		SortBy:        "id",
+		Order:         1,
+		TagCompare:    "AND",
+		TagNot:        false,
+		AuthorCompare: "AND",
+		Secure:        4,
+		Invert:        false,
+		Limit:         0,
+	}
+}
+
 // ShortResponse is the API response data
 type ShortResponse struct {
 	Message string `json:"message"`
@@ -95,6 +125,35 @@ func (c *Client) Update(page *Page) error {
 	}
 
 	return nil
+}
+
+func (c *Client) Query(options *Options) (map[string]*Page, error) {
+	url := fmt.Sprint(c.BaseURL, "/api/v0/pages/query")
+
+	buf := &bytes.Buffer{}
+	encoder := json.NewEncoder(buf)
+	if err := encoder.Encode(options); err != nil {
+		return nil, fmt.Errorf("encode query options: %w", err)
+	}
+
+	res, err := c.httpClient.Post(url, "application/json", buf)
+	if err != nil {
+		return nil, err
+	}
+	defer res.Body.Close()
+
+	if err := chekResponse(res); err != nil {
+		return nil, err
+	}
+
+	var result struct {
+		Pages map[string]*Page `json:"pages"`
+	}
+	decoder := json.NewDecoder(res.Body)
+	if err := decoder.Decode(&result); err != nil {
+		return nil, fmt.Errorf("decode page list: %w", err)
+	}
+	return result.Pages, nil
 }
 
 func (c *Client) Auth(username string, password string) (string, error) {
