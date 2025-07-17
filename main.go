@@ -244,7 +244,6 @@ func initialize(args []string) {
 
 	database := LoadDatabase()
 	database.Config.BaseURL = baseURL
-	SaveDatabase(database)
 
 	log.Println("🔌 connected to W")
 
@@ -272,6 +271,7 @@ func initialize(args []string) {
 		log.Fatal(err)
 	}
 
+	SaveDatabase(database)
 	SaveToken(token)
 
 	log.Println("🔓️ logged in")
@@ -357,7 +357,7 @@ func main() {
 			log.Fatalln("invalid sub command")
 		}
 	} else {
-		log.Fatalln("command need at least one argument")
+		menu()
 	}
 
 }
