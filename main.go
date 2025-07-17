@@ -198,6 +198,27 @@ func initialize(args []string) {
 		log.Fatalln("directory is not empty")
 	}
 
+	absoluteRepoPath, err := filepath.Abs(repoPath)
+	if err != nil {
+		log.Fatalln(err)
+	}
+
+	var confirm bool
+	confirmForm := huh.NewForm(
+		huh.NewGroup(
+			huh.NewConfirm().
+				Title("Confirm use of path: '" + absoluteRepoPath + "'").
+				Description("Do you want to use this folder to store the pages ?").
+				Value(&confirm),
+		),
+	)
+	if err := confirmForm.Run(); err != nil {
+		log.Fatal(err)
+	}
+	if !confirm {
+		log.Fatalln("❌ init aborted")
+	}
+
 	var baseURL string
 	if len(args) < 1 {
 		baseURLForm := huh.NewForm(
