@@ -129,6 +129,12 @@ func Download(co *api.Client, database *Database, id string) error {
 	if err != nil {
 		return fmt.Errorf("get page: %w", err)
 	}
+
+	_, exist := database.Pages[id]
+	if exist && database.Pages[id].DateSync.After(page.DateModif) {
+		return fmt.Errorf("already latest version")
+	}
+
 	filename := id + ".md"
 	filename = filepath.Join(repoPath, filename)
 
