@@ -7,8 +7,10 @@ import (
 	"fmt"
 	"io/fs"
 	"log"
+	"maps"
 	"os"
 	"path/filepath"
+	"slices"
 	"time"
 
 	"github.com/vincent-peugnet/wsync/api"
@@ -43,25 +45,26 @@ func NewDatabase() *Database {
 }
 
 // HasBeenModified checks if given page has beed modified locally
-func (db *Database) HasBeenModified(id string) bool {
+func (db *Database) HasBeenModified(id string) (bool, error) {
 	pageData, exist := db.Pages[id]
 	if !exist {
-		return false // if not in db, we do not care
+		return false, fmt.Errorf("page not found in local database: %q", id)
 	}
 	filename := id + ".md"
 	filename = filepath.Join(repoPath, filename)
 
 	stat, err := os.Stat(filename)
 	if err != nil {
-		return false // we do not care of error
+		return false, fmt.Errorf("file not found")
 	}
-	return stat.ModTime().After(pageData.DateSync)
+	return stat.ModTime().After(pageData.DateSync), nil
 }
 
 func (db Database) EditedPages() []string {
 	var editedPages []string
 	for id := range db.Pages {
-		if db.HasBeenModified(id) {
+		modified, err := db.HasBeenModified(id)
+		if err == nil && modified {
 			editedPages = append(editedPages, id)
 		}
 	}
@@ -125,67 +128,145 @@ func LoadToken() string {
 	return string(token)
 }
 
-func Download(co *api.Client, database *Database, id string) error {
+// func syncPage(co *api.Client, database *Database, id string) (string, error) {
+// 	pushed, pushErr := push(co, database, id)
+// 	pulled, pullErr := pull(co, database, id)
+
+// 	if pullErr != nil || pushErr != nil {
+// 		return fmt.Errorf("sync: %w %w", pushErr, pullErr)
+// 	}
+// 	var message string
+// 	if pushed {
+
+// 	}
+// }
+
+func pullPage(co *api.Client, database *Database, id string) (bool, error) {
 	page, err := co.Get(id)
 	if err != nil {
-		return fmt.Errorf("get page: %w", err)
+		return false, fmt.Errorf("get page: %w", err)
 	}
 
-	_, exist := database.Pages[id]
-	if exist && database.Pages[id].DateSync.After(page.DateModif) {
-		return fmt.Errorf("already latest version")
+	pageData, exist := database.Pages[id]
+	if exist && pageData.DateSync.After(page.DateModif) {
+		return false, nil // already up to date
 	}
 
 	filename := id + ".md"
 	filename = filepath.Join(repoPath, filename)
 
-	if database.HasBeenModified(id) {
-		return fmt.Errorf("local modification")
+	modified, err := database.HasBeenModified(id)
+	if exist && err != nil {
+		return false, err
+	}
+	if modified {
+		return false, fmt.Errorf("local modification")
 	}
 
 	if err := os.WriteFile(filename, []byte(page.Content), 0664); err != nil {
-		return fmt.Errorf("write file: %w", err)
+		return false, fmt.Errorf("write file: %w", err)
 	}
 
-	pageData := &PageData{
+	pageData = &PageData{
 		DateModif: page.DateModif,
 		DateSync:  time.Now(),
 	}
 	database.Pages[id] = pageData
 
-	return nil
+	return true, nil
 }
 
-func Upload(co *api.Client, database *Database, id string) error {
+func pushPage(co *api.Client, database *Database, id string) (bool, error) {
 	pageData, exist := database.Pages[id]
 	if !exist {
-		return fmt.Errorf("ID not in database: %s", id)
+		return false, fmt.Errorf("ID not in database: %s", id)
 	}
 
 	filename := id + ".md"
 	filename = filepath.Join(repoPath, filename)
 	content, err := os.ReadFile(filename)
 	if err != nil {
-		return fmt.Errorf("read file: %w", err)
+		return false, fmt.Errorf("read file: %w", err)
 	}
 
-	if !database.HasBeenModified(id) {
-		return fmt.Errorf("page has not been edited locally")
+	modified, err := database.HasBeenModified(id)
+	if err != nil {
+		return false, err
+	}
+	if modified {
+		page := &api.Page{
+			ID:        id,
+			Content:   string(content),
+			DateModif: pageData.DateModif,
+		}
+
+		updatedPage, err := co.Update(page)
+		if err := err; err != nil {
+			return false, fmt.Errorf("update page: %w", err)
+		}
+		pageData.DateModif = updatedPage.DateModif
+	}
+	pageData.DateSync = time.Now()
+
+	return modified, nil
+}
+
+func Push() {
+	database := LoadDatabase()
+	token := LoadToken()
+
+	client := api.NewClient(database.Config.BaseURL)
+	client.Token = token
+
+	var i int
+	for id := range database.Pages {
+		pushed, err := pushPage(client, database, id)
+		if err != nil {
+			fmt.Printf("❌ could not push page: %q %v\n", id, err)
+			i++
+		}
+		if pushed {
+			fmt.Printf("⬆️  pushed page %q - ", id)
+			fmt.Print(database.Config.BaseURL + "/" + id + "\n")
+			i++
+		}
+	}
+	if i == 0 {
+		fmt.Println("✅ all pages are already up to date")
+	}
+	SaveDatabase(database)
+}
+
+func Pull(args []string) {
+	database := LoadDatabase()
+	token := LoadToken()
+
+	client := api.NewClient(database.Config.BaseURL)
+	client.Token = token
+
+	var pages []string
+	if len(args) > 0 {
+		pages = args
+	} else {
+		pages = slices.Collect(maps.Keys(database.Pages))
+	}
+	var i int
+	for _, id := range pages {
+		pushed, err := pullPage(client, database, id)
+		if err != nil {
+			fmt.Printf("❌ could not pull page: %q: %v\n", id, err)
+			i++
+		}
+		if pushed {
+			fmt.Printf("⬇️  pulled page %q\n", id)
+			i++
+		}
+	}
+	if i == 0 {
+		fmt.Println("✅ all pages are already up to date")
 	}
 
-	page := &api.Page{
-		ID:        id,
-		Content:   string(content),
-		DateModif: pageData.DateModif,
-	}
-
-	if err := co.Update(page); err != nil {
-		return fmt.Errorf("update page: %w", err)
-	}
-
-	database.Pages[id].DateSync = time.Now()
-
-	return nil
+	SaveDatabase(database)
 }
 
 func initialize(args []string) {
@@ -279,43 +360,6 @@ func initialize(args []string) {
 	fmt.Println("⭐️ repository initalized")
 }
 
-func sync(args []string) {
-	database := LoadDatabase()
-	token := LoadToken()
-
-	client := api.NewClient(database.Config.BaseURL)
-	client.Token = token
-
-	if len(args) < 1 {
-		if err := os.MkdirAll(repoPath, 0775); err != nil {
-			log.Fatalln("could not create store:", err)
-		}
-		editedPages := database.EditedPages()
-
-		for _, id := range editedPages {
-			if err := Upload(client, database, id); err != nil {
-				log.Println("could not upload page:", id, err)
-			} else {
-				fmt.Println("⬆️ page uploaded:", id)
-			}
-		}
-
-		// TODO: try to download all modified pages from the server
-	} else {
-		id := args[0]
-
-		if err := Upload(client, database, id); err != nil {
-			log.Println("could not upload page:", err)
-		}
-
-		if err := Download(client, database, id); err != nil {
-			log.Println("could not download updated page:", err)
-		}
-	}
-
-	SaveDatabase(database)
-}
-
 func list() {
 	database := LoadDatabase()
 	token := LoadToken()
@@ -385,8 +429,10 @@ func main() {
 		switch args[0] {
 		case "init":
 			initialize(args[1:])
-		case "sync":
-			sync(args[1:])
+		case "pull":
+			Pull(args[1:])
+		case "push":
+			Push()
 		case "list":
 			list()
 		default:

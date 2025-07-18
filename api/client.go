@@ -118,19 +118,24 @@ func (c *Client) Get(id string) (*Page, error) {
 	return &page, nil
 }
 
-func (c *Client) Update(page *Page) error {
+func (c *Client) Update(page *Page) (*Page, error) {
 	path := fmt.Sprint("/api/v0/page/", page.ID, "/update")
 	res, err := c.post(path, page)
 	if err != nil {
-		return err
+		return nil, err
 	}
 	defer res.Body.Close()
 
 	if err := chekResponse(res); err != nil {
-		return err
+		return nil, err
 	}
 
-	return nil
+	decoder := json.NewDecoder(res.Body)
+	var updatedPage Page
+	if err := decoder.Decode(&updatedPage); err != nil {
+		return nil, fmt.Errorf("decode updated page: %w", err)
+	}
+	return &updatedPage, nil
 }
 
 func (c *Client) List() ([]string, error) {
