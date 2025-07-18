@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"net/url"
 	"strings"
 	"time"
 )
@@ -118,8 +119,14 @@ func (c *Client) Get(id string) (*Page, error) {
 	return &page, nil
 }
 
-func (c *Client) Update(page *Page) (*Page, error) {
-	path := fmt.Sprint("/api/v0/page/", page.ID, "/update")
+func (c *Client) Update(page *Page, force bool) (*Page, error) {
+	var query string
+	if force {
+		v := url.Values{}
+		v.Set("force", "1")
+		query = "?" + v.Encode()
+	}
+	path := fmt.Sprint("/api/v0/page/", page.ID, "/update", query)
 	res, err := c.post(path, page)
 	if err != nil {
 		return nil, err

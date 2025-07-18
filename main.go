@@ -20,6 +20,7 @@ import (
 )
 
 var repoPath string
+var force bool
 
 const (
 	DatabasePath = ".wsync/database.json"
@@ -159,7 +160,7 @@ func pullPage(co *api.Client, database *Database, id string) (bool, error) {
 	if exist && err != nil {
 		return false, err
 	}
-	if modified {
+	if modified && !force {
 		return false, fmt.Errorf("local modification")
 	}
 
@@ -200,7 +201,7 @@ func pushPage(co *api.Client, database *Database, id string) (bool, error) {
 			DateModif: pageData.DateModif,
 		}
 
-		updatedPage, err := co.Update(page)
+		updatedPage, err := co.Update(page, force)
 		if err := err; err != nil {
 			return false, fmt.Errorf("update page: %w", err)
 		}
@@ -401,6 +402,8 @@ func menu() {
 				Title("What to do ?").
 				Options(
 					huh.NewOption("Init", "init"),
+					huh.NewOption("Push", "push"),
+					huh.NewOption("Pull", "pull"),
 					huh.NewOption("nothing", "nothing"),
 				).
 				Value(&action),
@@ -414,6 +417,10 @@ func menu() {
 	switch action {
 	case "init":
 		initialize(nil)
+	case "push":
+		Push()
+	case "pull":
+		Pull(nil)
 	default:
 		fmt.Println("bye bye 👋")
 	}
@@ -422,6 +429,7 @@ func menu() {
 func main() {
 
 	flag.StringVar(&repoPath, "C", ".", "set the working directory")
+	flag.BoolVar(&force, "F", false, "force push or pull")
 	flag.Parse()
 
 	args := flag.Args()
