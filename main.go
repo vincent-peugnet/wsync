@@ -143,7 +143,7 @@ func LoadToken() string {
 // 	}
 // }
 
-func pullPage(co *api.Client, database *Database, id string) (bool, error) {
+func pullPage(co *api.Client, database *Database, id string, force bool) (bool, error) {
 	page, err := co.Get(id)
 	if err != nil {
 		return false, fmt.Errorf("get page: %w", err)
@@ -178,7 +178,7 @@ func pullPage(co *api.Client, database *Database, id string) (bool, error) {
 	return true, nil
 }
 
-func pushPage(co *api.Client, database *Database, id string) (bool, error) {
+func pushPage(co *api.Client, database *Database, id string, force bool) (bool, error) {
 	pageData, exist := database.Pages[id]
 	if !exist {
 		return false, fmt.Errorf("ID not in database: %s", id)
@@ -207,10 +207,23 @@ func pushPage(co *api.Client, database *Database, id string) (bool, error) {
 			return false, fmt.Errorf("update page: %w", err)
 		}
 		pageData.DateModif = updatedPage.DateModif
+		pageData.DateSync = time.Now()
 	}
-	pageData.DateSync = time.Now()
 
 	return modified, nil
+}
+
+func syncPage(co *api.Client, database *Database, id string) (bool, error) {
+	pushed, pushErr := pushPage(co, database, id, false)
+	if pushErr != nil {
+		return false, pushErr
+	}
+	pulled, pullErr := pullPage(co, database, id, false)
+	if pullErr != nil {
+		return false, pullErr
+	}
+
+	return pushed || pulled, nil
 }
 
 func Push(args []string) {
@@ -228,7 +241,7 @@ func Push(args []string) {
 	}
 	var i int
 	for _, id := range pages {
-		pushed, err := pushPage(client, database, id)
+		pushed, err := pushPage(client, database, id, force)
 		if err != nil {
 			fmt.Printf("❌ could not push page: %q %v\n", id, err)
 			i++
@@ -240,7 +253,7 @@ func Push(args []string) {
 		}
 	}
 	if i == 0 {
-		fmt.Println("✅ all pages are already up to date")
+		fmt.Println("✅ all tracked pages are already up to date")
 	}
 	SaveDatabase(database)
 }
@@ -260,21 +273,53 @@ func Pull(args []string) {
 	}
 	var i int
 	for _, id := range pages {
-		pushed, err := pullPage(client, database, id)
+		pulled, err := pullPage(client, database, id, force)
 		if err != nil {
 			fmt.Printf("❌ could not pull page: %q: %v\n", id, err)
 			i++
 		}
-		if pushed {
+		if pulled {
 			fmt.Printf("⬇️  pulled page %q\n", id)
 			i++
 		}
 	}
 	if i == 0 {
-		fmt.Println("✅ all pages are already up to date")
+		fmt.Println("✅ all tracked pages are already up to date")
 	}
 
 	SaveDatabase(database)
+}
+
+func Sync(args []string) {
+	database := LoadDatabase()
+	token := LoadToken()
+
+	client := api.NewClient(database.Config.BaseURL)
+	client.Token = token
+
+	var pages []string
+	if len(args) > 0 {
+		pages = args
+	} else {
+		pages = slices.Collect(maps.Keys(database.Pages))
+	}
+	var i int
+	for _, id := range pages {
+		synced, err := syncPage(client, database, id)
+		if err != nil {
+			fmt.Printf("❌ could not sync page %q: %v\n", id, err)
+			i++
+		}
+		if synced {
+			fmt.Printf("🔃 synced page %q\n", id)
+			i++
+		}
+	}
+	if i == 0 {
+		fmt.Println("✅ all tracked pages are already in sync")
+	}
+	SaveDatabase(database)
+
 }
 
 func initialize(args []string) {
@@ -445,6 +490,8 @@ func menu() {
 				Title("What to do ?").
 				Options(
 					huh.NewOption("Init", "init"),
+					huh.NewOption("Status", "status"),
+					huh.NewOption("Sync", "sync"),
 					huh.NewOption("Push", "push"),
 					huh.NewOption("Pull", "pull"),
 					huh.NewOption("nothing", "nothing"),
@@ -460,6 +507,10 @@ func menu() {
 	switch action {
 	case "init":
 		initialize(nil)
+	case "status":
+		Status()
+	case "sync":
+		Sync(nil)
 	case "push":
 		Push(nil)
 	case "pull":
@@ -480,6 +531,8 @@ func main() {
 		switch args[0] {
 		case "init":
 			initialize(args[1:])
+		case "sync":
+			Sync(args[1:])
 		case "pull":
 			Pull(args[1:])
 		case "push":
