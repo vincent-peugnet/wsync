@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"encoding/json"
 	"fmt"
+	"io"
 	"net/http"
 	"strings"
 	"time"
@@ -50,46 +51,56 @@ type ShortResponse struct {
 	Message string `json:"message"`
 }
 
-type Transport struct {
-	token string
-	trip  http.RoundTripper
-}
-
-func (t *Transport) RoundTrip(request *http.Request) (*http.Response, error) {
-	if t.token != "" {
-		request.Header.Set("Authorization", "Bearer "+t.token)
-	}
-	request.Header.Set("User-Agent", "wsync")
-	return t.trip.RoundTrip(request)
-}
-
 type Client struct {
-	BaseURL    string
-	transport  *Transport
-	httpClient http.Client
+	BaseURL string
+	Token   string
 }
 
 func NewClient(baseURL string) *Client {
-	transport := &Transport{
-		trip: http.DefaultTransport,
-	}
 
 	return &Client{
-		BaseURL:   strings.TrimRight(baseURL, "/"),
-		transport: transport,
-		httpClient: http.Client{
-			Transport: transport,
-		},
+		BaseURL: strings.TrimRight(baseURL, "/"),
 	}
 }
 
-func (c *Client) SetToken(token string) {
-	c.transport.token = token
+func (c *Client) newRequest(method, path string, body io.Reader) (*http.Request, error) {
+	url := c.BaseURL + path
+	request, err := http.NewRequest(method, url, body)
+	if err != nil {
+		return nil, err
+	}
+	if c.Token != "" {
+		request.Header.Set("Authorization", "Bearer "+c.Token)
+	}
+	request.Header.Set("User-Agent", "wsync")
+	return request, nil
+}
+
+func (c *Client) post(path string, content any) (*http.Response, error) {
+	buf := &bytes.Buffer{}
+	encoder := json.NewEncoder(buf)
+	if err := encoder.Encode(&content); err != nil {
+		return nil, fmt.Errorf("encode request body: %w", err)
+	}
+	request, err := c.newRequest(http.MethodPost, path, buf)
+	if err != nil {
+		return nil, fmt.Errorf("create request: %w", err)
+	}
+	request.Header.Set("Content-Type", "application/json")
+	return http.DefaultClient.Do(request)
+}
+
+func (c *Client) get(path string) (*http.Response, error) {
+	request, err := c.newRequest(http.MethodGet, path, nil)
+	if err != nil {
+		return nil, fmt.Errorf("create request: %w", err)
+	}
+	return http.DefaultClient.Do(request)
 }
 
 func (c *Client) Get(id string) (*Page, error) {
-	url := fmt.Sprint(c.BaseURL, "/api/v0/page/", id)
-	res, err := c.httpClient.Get(url)
+	path := fmt.Sprint("/api/v0/page/", id)
+	res, err := c.get(path)
 	if err != nil {
 		return nil, err
 	}
@@ -108,13 +119,8 @@ func (c *Client) Get(id string) (*Page, error) {
 }
 
 func (c *Client) Update(page *Page) error {
-	url := fmt.Sprint(c.BaseURL, "/api/v0/page/", page.ID, "/update")
-	buf := &bytes.Buffer{}
-	encoder := json.NewEncoder(buf)
-	if err := encoder.Encode(page); err != nil {
-		return fmt.Errorf("encode page: %w", err)
-	}
-	res, err := c.httpClient.Post(url, "application/json", buf)
+	path := fmt.Sprint("/api/v0/page/", page.ID, "/update")
+	res, err := c.post(path, page)
 	if err != nil {
 		return err
 	}
@@ -128,8 +134,7 @@ func (c *Client) Update(page *Page) error {
 }
 
 func (c *Client) List() ([]string, error) {
-	url := fmt.Sprint(c.BaseURL, "/api/v0/pages/list")
-	res, err := c.httpClient.Get(url)
+	res, err := c.get("/api/v0/pages/list")
 	if err != nil {
 		return nil, err
 	}
@@ -150,15 +155,7 @@ func (c *Client) List() ([]string, error) {
 }
 
 func (c *Client) Query(options *Options) (map[string]*Page, error) {
-	url := fmt.Sprint(c.BaseURL, "/api/v0/pages/query")
-
-	buf := &bytes.Buffer{}
-	encoder := json.NewEncoder(buf)
-	if err := encoder.Encode(options); err != nil {
-		return nil, fmt.Errorf("encode query options: %w", err)
-	}
-
-	res, err := c.httpClient.Post(url, "application/json", buf)
+	res, err := c.post("/api/v0/pages/query", options)
 	if err != nil {
 		return nil, err
 	}
@@ -179,11 +176,16 @@ func (c *Client) Query(options *Options) (map[string]*Page, error) {
 }
 
 func (c *Client) Auth(username string, password string) (string, error) {
-	url := fmt.Sprint(c.BaseURL, "/api/v0/auth")
 
-	credentials := fmt.Sprintf(`{"username": %q, "password": %q}`, username, password)
+	credentials := struct {
+		Username string `json:"username"`
+		Password string `json:"password"`
+	}{
+		Username: username,
+		Password: password,
+	}
 
-	res, err := c.httpClient.Post(url, "application/json", strings.NewReader(credentials))
+	res, err := c.post("/api/v0/auth", credentials)
 	if err != nil {
 		return "", err
 	}
@@ -205,9 +207,7 @@ func (c *Client) Auth(username string, password string) (string, error) {
 }
 
 func (c *Client) Health() error {
-	url := fmt.Sprint(c.BaseURL, "/api/v0/health")
-
-	res, err := c.httpClient.Get(url)
+	res, err := c.get("/api/v0/health")
 	if err != nil {
 		return err
 	}

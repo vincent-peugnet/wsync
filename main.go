@@ -284,7 +284,7 @@ func sync(args []string) {
 	token := LoadToken()
 
 	client := api.NewClient(database.Config.BaseURL)
-	client.SetToken(string(token))
+	client.Token = token
 
 	if len(args) < 1 {
 		if err := os.MkdirAll(repoPath, 0775); err != nil {
@@ -321,7 +321,7 @@ func list() {
 	token := LoadToken()
 
 	client := api.NewClient(database.Config.BaseURL)
-	client.SetToken(string(token))
+	client.Token = token
 
 	ids, err := client.List()
 	if err != nil {
