@@ -213,15 +213,21 @@ func pushPage(co *api.Client, database *Database, id string) (bool, error) {
 	return modified, nil
 }
 
-func Push() {
+func Push(args []string) {
 	database := LoadDatabase()
 	token := LoadToken()
 
 	client := api.NewClient(database.Config.BaseURL)
 	client.Token = token
 
+	var pages []string
+	if len(args) > 0 {
+		pages = args
+	} else {
+		pages = slices.Collect(maps.Keys(database.Pages))
+	}
 	var i int
-	for id := range database.Pages {
+	for _, id := range pages {
 		pushed, err := pushPage(client, database, id)
 		if err != nil {
 			fmt.Printf("❌ could not push page: %q %v\n", id, err)
@@ -455,7 +461,7 @@ func menu() {
 	case "init":
 		initialize(nil)
 	case "push":
-		Push()
+		Push(nil)
 	case "pull":
 		Pull(nil)
 	default:
@@ -477,7 +483,7 @@ func main() {
 		case "pull":
 			Pull(args[1:])
 		case "push":
-			Push()
+			Push(args[1:])
 		case "list":
 			list()
 		case "status":
