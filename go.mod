@@ -1,4 +1,4 @@
-module wsync
+module github.com/vincent-peugnet/wsync
 
 go 1.23.0
 

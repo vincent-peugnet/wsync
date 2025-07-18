@@ -10,7 +10,8 @@ import (
 	"os"
 	"path/filepath"
 	"time"
-	"wsync/api"
+
+	"github.com/vincent-peugnet/wsync/api"
 
 	"github.com/charmbracelet/bubbles/textinput"
 	"github.com/charmbracelet/huh"
@@ -315,6 +316,39 @@ func sync(args []string) {
 	SaveDatabase(database)
 }
 
+func list() {
+	database := LoadDatabase()
+	token := LoadToken()
+
+	client := api.NewClient(database.Config.BaseURL)
+	client.SetToken(string(token))
+
+	ids, err := client.List()
+	if err != nil {
+		log.Fatalln(err)
+	}
+
+	var options []huh.Option[string]
+	for _, id := range ids {
+		options = append(options, huh.NewOption(id, id))
+	}
+
+	var selectedids []string
+	form := huh.NewForm(
+		huh.NewGroup(
+			huh.NewMultiSelect[string]().
+				Title("Select pages").
+				Options(options...).
+				Value(&selectedids).
+				WithHeight(10),
+		),
+	)
+	if err := form.Run(); err != nil {
+		log.Fatal(err)
+	}
+	fmt.Println(selectedids)
+}
+
 func menu() {
 	var action string
 	form := huh.NewForm(
@@ -353,6 +387,8 @@ func main() {
 			initialize(args[1:])
 		case "sync":
 			sync(args[1:])
+		case "list":
+			list()
 		default:
 			log.Fatalln("invalid sub command")
 		}
