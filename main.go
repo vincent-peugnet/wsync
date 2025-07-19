@@ -157,6 +157,10 @@ func pullPage(co *api.Client, database *Database, id string, force bool) (bool, 
 	filename := id + ".md"
 	filename = filepath.Join(repoPath, filename)
 
+	if _, err := os.Stat(filename); err == nil {
+		return false, fmt.Errorf("local file already exist")
+	}
+
 	modified, err := database.HasBeenModified(id)
 	if exist && err != nil {
 		return false, err
