@@ -417,7 +417,27 @@ func initialize(args []string) {
 	fmt.Println("⭐️ repository initalized")
 }
 
-func list() {
+func addedItems(originals []string, editeds []string) []string {
+	var addeds []string
+	for _, v := range editeds {
+		if !slices.Contains(originals, v) {
+			addeds = append(addeds, v)
+		}
+	}
+	return addeds
+}
+
+func removedItems(originals []string, editeds []string) []string {
+	var removeds []string
+	for _, v := range originals {
+		if !slices.Contains(editeds, v) {
+			removeds = append(removeds, v)
+		}
+	}
+	return removeds
+}
+
+func List() {
 	database := LoadDatabase()
 	token := LoadToken()
 
@@ -431,23 +451,62 @@ func list() {
 
 	var options []huh.Option[string]
 	for _, id := range ids {
-		options = append(options, huh.NewOption(id, id))
+		_, tracked := database.Pages[id]
+		options = append(options, huh.NewOption(id, id).Selected(tracked))
 	}
 
-	var selectedids []string
+	var selectedIds []string
 	form := huh.NewForm(
 		huh.NewGroup(
 			huh.NewMultiSelect[string]().
-				Title("Select pages").
+				Title("Select pages to track").
 				Options(options...).
-				Value(&selectedids).
+				Value(&selectedIds).
 				WithHeight(10),
 		),
 	)
 	if err := form.Run(); err != nil {
 		log.Fatal(err)
 	}
-	fmt.Println(selectedids)
+
+	addedIds := addedItems(slices.Collect(maps.Keys(database.Pages)), selectedIds)
+	// removedIds := removedItems(slices.Collect(maps.Keys(database.Pages)), selectedIds)
+
+	if len(addedIds) > 0 {
+		var confirmAdd bool
+		confirmForm := huh.NewForm(
+			huh.NewGroup(
+				huh.NewConfirm().
+					Title(fmt.Sprintln("add", len(addedIds), "new pages to your local repo ?")).
+					Description(fmt.Sprintln(addedIds)).
+					Value(&confirmAdd),
+			),
+		)
+		if err := confirmForm.Run(); err != nil {
+			log.Fatal(err)
+		}
+		if confirmAdd {
+			Pull(addedIds)
+		}
+	}
+
+	// if len(removedIds) > 0 {
+	// 	var confirmRemove bool
+	// 	confirmForm := huh.NewForm(
+	// 		huh.NewGroup(
+	// 			huh.NewConfirm().
+	// 				Title(fmt.Sprintln("remove", len(removedIds), "pages from your local repo ?")).
+	// 				Description(fmt.Sprintln(removedIds)).
+	// 				Value(&confirmRemove),
+	// 		),
+	// 	)
+	// 	if err := confirmForm.Run(); err != nil {
+	// 		log.Fatal(err)
+	// 	}
+	// 	if confirmRemove {
+	// 		Pull(addedIds)
+	// 	}
+	// }
 }
 
 func Status() {
@@ -493,11 +552,12 @@ func menu() {
 			huh.NewSelect[string]().
 				Title("What to do ?").
 				Options(
-					huh.NewOption("Init", "init"),
 					huh.NewOption("Status", "status"),
 					huh.NewOption("Sync", "sync"),
 					huh.NewOption("Push", "push"),
 					huh.NewOption("Pull", "pull"),
+					huh.NewOption("List", "list"),
+					huh.NewOption("Init", "init"),
 					huh.NewOption("nothing", "nothing"),
 				).
 				Value(&action),
@@ -513,6 +573,8 @@ func menu() {
 		initialize(nil)
 	case "status":
 		Status()
+	case "list":
+		List()
 	case "sync":
 		Sync(nil)
 	case "push":
@@ -542,7 +604,7 @@ func main() {
 		case "push":
 			Push(args[1:])
 		case "list":
-			list()
+			List()
 		case "status":
 			Status()
 		default:
