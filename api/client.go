@@ -3,6 +3,7 @@ package api
 import (
 	"bytes"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"net/http"
@@ -10,6 +11,8 @@ import (
 	"strings"
 	"time"
 )
+
+var ErrConflict = errors.New("conflict")
 
 type Page struct {
 	ID        string    `json:"id"`
@@ -119,6 +122,8 @@ func (c *Client) Get(id string) (*Page, error) {
 	return &page, nil
 }
 
+// try to update page
+// if response is 409, returned error is ErrConflict
 func (c *Client) Update(page *Page, force bool) (*Page, error) {
 	var query string
 	if force {
@@ -232,10 +237,17 @@ func chekResponse(res *http.Response) error {
 	if res.StatusCode != 200 {
 		decoder := json.NewDecoder(res.Body)
 		var shortResponse ShortResponse
+		msg := fmt.Sprintf("status code: %d", res.StatusCode)
 		if err := decoder.Decode(&shortResponse); err == nil {
-			return fmt.Errorf("status code: %d - %s", res.StatusCode, shortResponse.Message)
+			msg = fmt.Sprintf("status code: %d - %s", res.StatusCode, shortResponse.Message)
 		}
-		return fmt.Errorf("status code: %d", res.StatusCode)
+		switch res.StatusCode {
+		case 409:
+			return fmt.Errorf("%w: %v", ErrConflict, msg)
+		default:
+			return errors.New(msg)
+		}
 	}
+
 	return nil
 }
