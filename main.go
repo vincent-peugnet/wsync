@@ -28,10 +28,61 @@ const (
 	TokenPath    = ".wsync/token"
 )
 
+//___________________________ GENERIC ___________________________
+
+// Identify added items to original slice
+func addedItems(originals []string, editeds []string) []string {
+	var addeds []string
+	for _, v := range editeds {
+		if !slices.Contains(originals, v) {
+			addeds = append(addeds, v)
+		}
+	}
+	return addeds
+}
+
+// identify removed item from original slice
+func removedItems(originals []string, editeds []string) []string {
+	var removeds []string
+	for _, v := range originals {
+		if !slices.Contains(editeds, v) {
+			removeds = append(removeds, v)
+		}
+	}
+	return removeds
+}
+
+func GetPagePath(id string) string {
+	filename := id + ".md"
+	return filepath.Join(repoPath, filename)
+}
+
+func SaveToken(token string) {
+	filename := filepath.Join(repoPath, TokenPath)
+	if err := os.MkdirAll(filepath.Dir(filename), 0775); err != nil {
+		log.Fatalln("save token:", err)
+	}
+
+	if err := os.WriteFile(filename, []byte(token), 0640); err != nil {
+		log.Fatalln("save token:", err)
+	}
+}
+
+func LoadToken() string {
+	filename := filepath.Join(repoPath, TokenPath)
+	token, err := os.ReadFile(filename)
+	if err != nil {
+		log.Fatalln("load token:", err)
+	}
+	return string(token)
+}
+
 type PageData struct {
 	DateModif time.Time
 	DateSync  time.Time
 }
+
+//___________________________ DATABASE ___________________________
 
 type Database struct {
 	Pages  map[string]*PageData
@@ -46,7 +97,7 @@ func NewDatabase() *Database {
 	}
 }
 
-// HasBeenModified checks if given page has beed modified locally
+// checks if given page has beed modified locally
 func (db *Database) HasBeenModified(id string) (bool, error) {
 	pageData, exist := db.Pages[id]
 	if !exist {
@@ -61,6 +112,7 @@ func (db *Database) HasBeenModified(id string) (bool, error) {
 	return stat.ModTime().After(pageData.DateSync), nil
 }
 
+// return list of localy edited pages
 func (db Database) EditedPages() []string {
 	var editedPages []string
 	for id := range db.Pages {
@@ -109,31 +161,6 @@ func SaveDatabase(database *Database) {
 	}
 }
 
-func SaveToken(token string) {
-	filename := filepath.Join(repoPath, TokenPath)
-	if err := os.MkdirAll(filepath.Dir(filename), 0775); err != nil {
-		log.Fatalln("save token:", err)
-	}
-
-	if err := os.WriteFile(filename, []byte(token), 0640); err != nil {
-		log.Fatalln("save token:", err)
-	}
-}
-
-func LoadToken() string {
-	filename := filepath.Join(repoPath, TokenPath)
-	token, err := os.ReadFile(filename)
-	if err != nil {
-		log.Fatalln("load token:", err)
-	}
-	return string(token)
-}
-
-func GetPagePath(id string) string {
-	filename := id + ".md"
-	return filepath.Join(repoPath, filename)
-}
-
 // Remove local page
 // return true if local file was deleted
 func (db *Database) removePage(id string) (bool, error) {
@@ -154,7 +181,7 @@ func (db *Database) removePage(id string) (bool, error) {
 }
 
 func (db *Database) addPage(co *api.Client, id string) error {
-	pageData, exist := db.Pages[id]
+	_, exist := db.Pages[id]
 	if exist {
 		return fmt.Errorf("page is already tracked")
 	}
@@ -174,7 +201,7 @@ func (db *Database) addPage(co *api.Client, id string) error {
 		return fmt.Errorf("write file: %w", err)
 	}
 
-	pageData = &PageData{
+	pageData := &PageData{
 		DateModif: page.DateModif,
 		DateSync:  time.Now(),
 	}
@@ -183,13 +210,13 @@ func (db *Database) addPage(co *api.Client, id string) error {
 	return nil
 }
 
-func pullPage(co *api.Client, database *Database, id string, force bool) (bool, error) {
+func (db *Database) pullPage(co *api.Client, id string, force bool) (bool, error) {
 	page, err := co.Get(id)
 	if err != nil {
 		return false, fmt.Errorf("get page: %w", err)
 	}
 
-	pageData, exist := database.Pages[id]
+	pageData, exist := db.Pages[id]
 	if !exist {
 		return false, fmt.Errorf("untracked page")
 	}
@@ -204,7 +231,7 @@ func pullPage(co *api.Client, database *Database, id string, force bool) (bool, 
 		return false, fmt.Errorf("local file already exist")
 	}
 
-	modified, err := database.HasBeenModified(id)
+	modified, err := db.HasBeenModified(id)
 	if err != nil {
 		return false, err
 	}
@@ -220,13 +247,13 @@ func pullPage(co *api.Client, database *Database, id string, force bool) (bool, 
 		DateModif: page.DateModif,
 		DateSync:  time.Now(),
 	}
-	database.Pages[id] = pageData
+	db.Pages[id] = pageData
 
 	return true, nil
 }
 
-func pushPage(co *api.Client, database *Database, id string, force bool) (bool, error) {
-	pageData, exist := database.Pages[id]
+func (db *Database) pushPage(co *api.Client, id string, force bool) (bool, error) {
+	pageData, exist := db.Pages[id]
 	if !exist {
 		return false, fmt.Errorf("ID not in database: %s", id)
 	}
@@ -237,7 +264,7 @@ func pushPage(co *api.Client, database *Database, id string, force bool) (bool, 
 		return false, fmt.Errorf("read file: %w", err)
 	}
 
-	modified, err := database.HasBeenModified(id)
+	modified, err := db.HasBeenModified(id)
 	if err != nil {
 		return false, err
 	}
@@ -259,18 +286,20 @@ func pushPage(co *api.Client, database *Database, id string, force bool) (bool, 
 	return modified, nil
 }
 
-func syncPage(co *api.Client, database *Database, id string) (bool, error) {
-	pushed, pushErr := pushPage(co, database, id, false)
+func (db *Database) syncPage(co *api.Client, id string) (bool, error) {
+	pushed, pushErr := db.pushPage(co, id, false)
 	if pushErr != nil {
 		return false, pushErr
 	}
-	pulled, pullErr := pullPage(co, database, id, false)
+	pulled, pullErr := db.pullPage(co, id, false)
 	if pullErr != nil {
 		return false, pullErr
 	}
 
 	return pushed || pulled, nil
 }
+
+//___________________________ SUB COMMANDS ___________________________
 
 func Push(args []string) {
 	database := LoadDatabase()
@@ -287,7 +316,7 @@ func Push(args []string) {
 	}
 	var i int
 	for _, id := range pages {
-		pushed, err := pushPage(client, database, id, force)
+		pushed, err := database.pushPage(client, id, force)
 		if err != nil {
 			fmt.Printf("❌ could not push page: %q %v\n", id, err)
 			i++
@@ -319,7 +348,7 @@ func Pull(args []string) {
 	}
 	var i int
 	for _, id := range pages {
-		pulled, err := pullPage(client, database, id, force)
+		pulled, err := database.pullPage(client, id, force)
 		if err != nil {
 			fmt.Printf("❌ could not pull page: %q: %v\n", id, err)
 			i++
@@ -351,7 +380,7 @@ func Sync(args []string) {
 	}
 	var i int
 	for _, id := range pages {
-		synced, err := syncPage(client, database, id)
+		synced, err := database.syncPage(client, id)
 		if err != nil {
 			fmt.Printf("❌ could not sync page %q: %v\n", id, err)
 			i++
@@ -368,7 +397,7 @@ func Sync(args []string) {
 
 }
 
-func initialize(args []string) {
+func Initialize(args []string) {
 
 	files, err := os.ReadDir(repoPath)
 	if err != nil {
@@ -503,26 +532,6 @@ func Remove(args []string) {
 	SaveDatabase(database)
 }
 
-func addedItems(originals []string, editeds []string) []string {
-	var addeds []string
-	for _, v := range editeds {
-		if !slices.Contains(originals, v) {
-			addeds = append(addeds, v)
-		}
-	}
-	return addeds
-}
-
-func removedItems(originals []string, editeds []string) []string {
-	var removeds []string
-	for _, v := range originals {
-		if !slices.Contains(editeds, v) {
-			removeds = append(removeds, v)
-		}
-	}
-	return removeds
-}
-
 func List() {
 	database := LoadDatabase()
 	token := LoadToken()
@@ -558,7 +567,7 @@ func List() {
 	addedIds := addedItems(slices.Collect(maps.Keys(database.Pages)), selectedIds)
 	removedIds := removedItems(slices.Collect(maps.Keys(database.Pages)), selectedIds)
 
-	//TODO: the following sections call Pull and Remove, which also load the Database.
+	//TODO: the following sections call Pull() and Remove(), which also load the Database.
 	// Would be better to use the same, already loaded, database
 	// Maybe there should be removePages(), pullPages() and pushPages() functions that would take a database argument
 
@@ -635,6 +644,8 @@ func Status() {
 
 }
 
+// ___________________________ INTERFACE ___________________________
+
 func menu() {
 	var action string
 	form := huh.NewForm(
@@ -660,7 +671,7 @@ func menu() {
 
 	switch action {
 	case "init":
-		initialize(nil)
+		Initialize(nil)
 	case "status":
 		Status()
 	case "list":
@@ -686,7 +697,7 @@ func main() {
 	if len(args) >= 1 {
 		switch args[0] {
 		case "init":
-			initialize(args[1:])
+			Initialize(args[1:])
 		case "sync":
 			Sync(args[1:])
 		case "pull":
