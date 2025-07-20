@@ -216,19 +216,18 @@ func (db *Database) pullPage(co *api.Client, id string, force bool) (bool, error
 		return false, fmt.Errorf("get page: %w", err)
 	}
 
+	filename := GetPagePath(id)
+
 	pageData, exist := db.Pages[id]
 	if !exist {
+		if _, err := os.Stat(filename); err == nil {
+			return false, fmt.Errorf("local file already exist")
+		}
 		return false, fmt.Errorf("untracked page")
 	}
 
 	if pageData.DateSync.After(page.DateModif) {
 		return false, nil // already up to date
-	}
-
-	filename := GetPagePath(id)
-
-	if _, err := os.Stat(filename); err == nil {
-		return false, fmt.Errorf("local file already exist")
 	}
 
 	modified, err := db.HasBeenModified(id)
