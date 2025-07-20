@@ -31,6 +31,7 @@ To add the first pages, you can select "list" option in the menu.
                          | push [...PAGE_ID]
                          | pull [...PAGE_ID]
                          | remove ...PAGE_ID
+                         | add ...PAGE_ID
                          | list
 
 ### Flags

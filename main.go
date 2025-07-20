@@ -134,6 +134,8 @@ func GetPagePath(id string) string {
 	return filepath.Join(repoPath, filename)
 }
 
+// Remove local page
+// return true if local file was deleted
 func (db *Database) removePage(id string) (bool, error) {
 	modified, err := db.HasBeenModified(id)
 	if err != nil {
@@ -151,6 +153,36 @@ func (db *Database) removePage(id string) (bool, error) {
 	}
 }
 
+func (db *Database) addPage(co *api.Client, id string) error {
+	pageData, exist := db.Pages[id]
+	if exist {
+		return fmt.Errorf("page is already tracked")
+	}
+
+	filename := GetPagePath(id)
+
+	if _, err := os.Stat(filename); err == nil {
+		return fmt.Errorf("local file already exist")
+	}
+
+	page, err := co.Get(id)
+	if err != nil {
+		return fmt.Errorf("tried to get page: %w", err)
+	}
+
+	if err := os.WriteFile(filename, []byte(page.Content), 0664); err != nil {
+		return fmt.Errorf("write file: %w", err)
+	}
+
+	pageData = &PageData{
+		DateModif: page.DateModif,
+		DateSync:  time.Now(),
+	}
+	db.Pages[id] = pageData
+
+	return nil
+}
+
 func pullPage(co *api.Client, database *Database, id string, force bool) (bool, error) {
 	page, err := co.Get(id)
 	if err != nil {
@@ -158,7 +190,11 @@ func pullPage(co *api.Client, database *Database, id string, force bool) (bool, 
 	}
 
 	pageData, exist := database.Pages[id]
-	if exist && pageData.DateSync.After(page.DateModif) {
+	if !exist {
+		return false, fmt.Errorf("untracked page")
+	}
+
+	if pageData.DateSync.After(page.DateModif) {
 		return false, nil // already up to date
 	}
 
@@ -169,7 +205,7 @@ func pullPage(co *api.Client, database *Database, id string, force bool) (bool, 
 	}
 
 	modified, err := database.HasBeenModified(id)
-	if exist && err != nil {
+	if err != nil {
 		return false, err
 	}
 	if modified && !force {
@@ -423,6 +459,29 @@ func initialize(args []string) {
 	fmt.Println("⭐️ repository initalized")
 }
 
+func Add(args []string) {
+	if len(args) < 1 {
+		log.Fatalln("add sub-command need at least one page id argument")
+	}
+
+	database := LoadDatabase()
+	token := LoadToken()
+
+	client := api.NewClient(database.Config.BaseURL)
+	client.Token = token
+
+	for _, id := range args {
+		err := database.addPage(client, id)
+		if err != nil {
+			fmt.Printf("❌ error while adding page %q: %v\n", id, err)
+		} else {
+			fmt.Printf("⭐️ added new tracked page %q, created new file %q\n", id, GetPagePath(id))
+		}
+	}
+
+	SaveDatabase(database)
+}
+
 func Remove(args []string) {
 	if len(args) < 1 {
 		log.Fatalln("remove sub-command need at least one page id argument")
@@ -517,7 +576,7 @@ func List() {
 			log.Fatal(err)
 		}
 		if confirmAdd {
-			Pull(addedIds)
+			Add(addedIds)
 		}
 	}
 
@@ -636,6 +695,8 @@ func main() {
 			Push(args[1:])
 		case "remove":
 			Remove(args[1:])
+		case "add":
+			Add(args[1:])
 		case "list":
 			List()
 		case "status":
