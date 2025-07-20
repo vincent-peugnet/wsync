@@ -50,14 +50,13 @@ func NewDatabase() *Database {
 func (db *Database) HasBeenModified(id string) (bool, error) {
 	pageData, exist := db.Pages[id]
 	if !exist {
-		return false, fmt.Errorf("page not found in local database: %q", id)
+		return false, fmt.Errorf("not found in tracked pages")
 	}
-	filename := id + ".md"
-	filename = filepath.Join(repoPath, filename)
+	filename := GetPagePath(id)
 
 	stat, err := os.Stat(filename)
 	if err != nil {
-		return false, fmt.Errorf("file not found")
+		return false, fmt.Errorf("file not found: %w", err)
 	}
 	return stat.ModTime().After(pageData.DateSync), nil
 }
@@ -130,18 +129,27 @@ func LoadToken() string {
 	return string(token)
 }
 
-// func syncPage(co *api.Client, database *Database, id string) (string, error) {
-// 	pushed, pushErr := push(co, database, id)
-// 	pulled, pullErr := pull(co, database, id)
+func GetPagePath(id string) string {
+	filename := id + ".md"
+	return filepath.Join(repoPath, filename)
+}
 
-// 	if pullErr != nil || pushErr != nil {
-// 		return fmt.Errorf("sync: %w %w", pushErr, pullErr)
-// 	}
-// 	var message string
-// 	if pushed {
-
-// 	}
-// }
+func (db *Database) removePage(id string) (bool, error) {
+	modified, err := db.HasBeenModified(id)
+	if err != nil {
+		return false, fmt.Errorf("tried to untrack: %w", err)
+	}
+	delete(db.Pages, id) // untrack
+	if modified {        // Do not delete the page if localy edited
+		return false, nil
+	} else {
+		err := os.Remove(GetPagePath(id))
+		if err != nil {
+			return false, fmt.Errorf("tried to delete file: %w", err)
+		}
+		return true, nil
+	}
+}
 
 func pullPage(co *api.Client, database *Database, id string, force bool) (bool, error) {
 	page, err := co.Get(id)
@@ -154,8 +162,7 @@ func pullPage(co *api.Client, database *Database, id string, force bool) (bool, 
 		return false, nil // already up to date
 	}
 
-	filename := id + ".md"
-	filename = filepath.Join(repoPath, filename)
+	filename := GetPagePath(id)
 
 	if _, err := os.Stat(filename); err == nil {
 		return false, fmt.Errorf("local file already exist")
@@ -188,8 +195,7 @@ func pushPage(co *api.Client, database *Database, id string, force bool) (bool, 
 		return false, fmt.Errorf("ID not in database: %s", id)
 	}
 
-	filename := id + ".md"
-	filename = filepath.Join(repoPath, filename)
+	filename := GetPagePath(id)
 	content, err := os.ReadFile(filename)
 	if err != nil {
 		return false, fmt.Errorf("read file: %w", err)
@@ -417,6 +423,27 @@ func initialize(args []string) {
 	fmt.Println("⭐️ repository initalized")
 }
 
+func Remove(args []string) {
+	if len(args) < 1 {
+		log.Fatalln("remove sub-command need at least one page id argument")
+	}
+
+	database := LoadDatabase()
+
+	for _, id := range args {
+		fileDeleted, err := database.removePage(id)
+		if err != nil {
+			fmt.Printf("❌ error while removing %q: %v\n", id, err)
+		} else if fileDeleted {
+			fmt.Printf("🗑️  removed page %q and deleted local associated file\n", id)
+		} else {
+			fmt.Printf("🛡️  untracked page %q, but kept %q file because of local modifications\n", id, GetPagePath(id))
+		}
+	}
+
+	SaveDatabase(database)
+}
+
 func addedItems(originals []string, editeds []string) []string {
 	var addeds []string
 	for _, v := range editeds {
@@ -470,7 +497,11 @@ func List() {
 	}
 
 	addedIds := addedItems(slices.Collect(maps.Keys(database.Pages)), selectedIds)
-	// removedIds := removedItems(slices.Collect(maps.Keys(database.Pages)), selectedIds)
+	removedIds := removedItems(slices.Collect(maps.Keys(database.Pages)), selectedIds)
+
+	//TODO: the following sections call Pull and Remove, which also load the Database.
+	// Would be better to use the same, already loaded, database
+	// Maybe there should be removePages(), pullPages() and pushPages() functions that would take a database argument
 
 	if len(addedIds) > 0 {
 		var confirmAdd bool
@@ -490,23 +521,23 @@ func List() {
 		}
 	}
 
-	// if len(removedIds) > 0 {
-	// 	var confirmRemove bool
-	// 	confirmForm := huh.NewForm(
-	// 		huh.NewGroup(
-	// 			huh.NewConfirm().
-	// 				Title(fmt.Sprintln("remove", len(removedIds), "pages from your local repo ?")).
-	// 				Description(fmt.Sprintln(removedIds)).
-	// 				Value(&confirmRemove),
-	// 		),
-	// 	)
-	// 	if err := confirmForm.Run(); err != nil {
-	// 		log.Fatal(err)
-	// 	}
-	// 	if confirmRemove {
-	// 		Pull(addedIds)
-	// 	}
-	// }
+	if len(removedIds) > 0 {
+		var confirmRemove bool
+		confirmForm := huh.NewForm(
+			huh.NewGroup(
+				huh.NewConfirm().
+					Title(fmt.Sprintln("remove", len(removedIds), "pages from your local repo ?")).
+					Description(fmt.Sprintln(removedIds)).
+					Value(&confirmRemove),
+			),
+		)
+		if err := confirmForm.Run(); err != nil {
+			log.Fatal(err)
+		}
+		if confirmRemove {
+			Remove(removedIds)
+		}
+	}
 }
 
 func Status() {
@@ -603,6 +634,8 @@ func main() {
 			Pull(args[1:])
 		case "push":
 			Push(args[1:])
+		case "remove":
+			Remove(args[1:])
 		case "list":
 			List()
 		case "status":
