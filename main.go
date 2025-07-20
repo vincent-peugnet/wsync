@@ -20,8 +20,9 @@ import (
 	"github.com/charmbracelet/huh"
 )
 
-var repoPath string
-var force bool
+var repoPath string  // local repo path
+var force bool       // force pull and push operations
+var interactive bool // interactive mode
 
 const (
 	DatabasePath = ".wsync/database.json"
@@ -275,7 +276,7 @@ func (db *Database) pushPage(co *api.Client, id string, force bool) (bool, error
 		}
 
 		updatedPage, err := co.Update(page, force)
-		if err := err; err != nil {
+		if err != nil {
 			return false, fmt.Errorf("update page: %w", err)
 		}
 		pageData.DateModif = updatedPage.DateModif
@@ -364,6 +365,46 @@ func Pull(args []string) {
 	SaveDatabase(database)
 }
 
+func conflict(db *Database, client *api.Client, id string) {
+	var action string
+	form := huh.NewForm(
+		huh.NewGroup(
+			huh.NewSelect[string]().
+				Title(fmt.Sprintf("Which version of %q should be kept ?", id)).
+				Description("⚠️  compare the two versions before choosing").
+				Options(
+					huh.NewOption("Both (keep conflict)", "both"),
+					huh.NewOption("Server (force pull)", "server"),
+					huh.NewOption("Local (force push)", "local"),
+				).
+				Value(&action),
+		),
+	)
+	err := form.Run()
+	if err != nil {
+		log.Fatal(err)
+	}
+
+	switch action {
+	case "server":
+		_, err := db.pullPage(client, id, true)
+		if err != nil {
+			fmt.Printf("❌  conflict for page %q: error while trying to force pull: %v\n", id, err)
+		} else {
+			fmt.Printf("⬇️  conflict for page %q: successfully force pulled\n", id)
+		}
+	case "local":
+		_, err := db.pushPage(client, id, true)
+		if err != nil {
+			fmt.Printf("❌  conflict for page %q: error while trying to force push: %v\n", id, err)
+		} else {
+			fmt.Printf("⬆️  conflict for page %q: successfully force pushed\n", id)
+		}
+	default:
+		fmt.Printf("⚔️  conflict for page %q: both version kept\n", id)
+	}
+}
+
 func Sync(args []string) {
 	database := LoadDatabase()
 	token := LoadToken()
@@ -380,11 +421,13 @@ func Sync(args []string) {
 	var i int
 	for _, id := range pages {
 		synced, err := database.syncPage(client, id)
-		if err != nil {
+		if interactive && errors.Is(err, api.ErrConflict) {
+			conflict(database, client, id)
+			i++
+		} else if err != nil {
 			fmt.Printf("❌ could not sync page %q: %v\n", id, err)
 			i++
-		}
-		if synced {
+		} else if synced {
 			fmt.Printf("🔃 synced page %q\n", id)
 			i++
 		}
@@ -646,6 +689,8 @@ func Status() {
 // ___________________________ INTERFACE ___________________________
 
 func menu() {
+	interactive = true
+
 	var action string
 	form := huh.NewForm(
 		huh.NewGroup(
@@ -690,6 +735,7 @@ func main() {
 
 	flag.StringVar(&repoPath, "C", ".", "set the working directory")
 	flag.BoolVar(&force, "F", false, "force push or pull")
+	flag.BoolVar(&interactive, "i", false, "disable interactive mode")
 	flag.Parse()
 
 	args := flag.Args()

@@ -27,11 +27,11 @@ To add the first pages, you can select "list" option in the menu.
 
     wsync [-C PATH] [-F] | init [W_URL]
                          | status
-                         | sync [...PAGE_ID]
-                         | push [...PAGE_ID]
-                         | pull [...PAGE_ID]
-                         | remove ...PAGE_ID
-                         | add ...PAGE_ID
+                         | [-i] sync [PAGE_ID...]
+                         | push [PAGE_ID...]
+                         | pull [PAGE_ID...]
+                         | remove PAGE_ID...
+                         | add PAGE_ID...
                          | list
 
 ### Flags
