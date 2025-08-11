@@ -143,3 +143,40 @@ Otherwise, an error message is printed.
 
 A interactive list of all pages on the server is displayed. You can check or un-check pages in order to **add** or **remove** them from the tracked pages.
 
+
+
+Build
+-----
+
+Build software for your machine.
+
+    make
+
+Will create one file:
+
+    wsync
+
+
+Release
+-------
+
+Build software for linux (arm/amd), mac (arm/amd) and windows.
+
+    make all
+
+Will create 5 files:
+
+```
+wsync-linux-amd64
+wsync-linux-arm64
+wsync-macos-amd64
+wsync-macos-arm64
+wsync-windows-amd64.exe
+```
+
+Other
+-----
+
+To delete all generated files, run:
+
+    make clean
