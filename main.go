@@ -20,6 +20,7 @@ import (
 	"github.com/charmbracelet/huh"
 )
 
+var version string = "unknown"
 var repoPath string  // local repo path
 var force bool       // force pull and push operations
 var interactive bool // interactive mode
@@ -686,6 +687,10 @@ func Status() {
 
 }
 
+func Version() {
+	fmt.Println("wsync version", version)
+}
+
 // ___________________________ INTERFACE ___________________________
 
 func menu() {
@@ -757,6 +762,8 @@ func main() {
 			List()
 		case "status":
 			Status()
+		case "version":
+			Version()
 		default:
 			log.Fatalln("invalid sub command")
 		}
