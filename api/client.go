@@ -223,14 +223,27 @@ func (c *Client) Auth(username string, password string) (string, error) {
 	return tokenResponse.Token, nil
 }
 
-func (c *Client) Health() error {
-	res, err := c.get("/api/v0/health")
+func (c *Client) Version() (string, error) {
+	res, err := c.get("/api/v0/version")
 	if err != nil {
-		return err
+		return "", err
 	}
+
 	defer res.Body.Close()
 
-	return chekResponse(res)
+	if err := chekResponse(res); err != nil {
+		return "", err
+	}
+
+	var versionResponse struct {
+		Version string `json:"version"`
+	}
+	decoder := json.NewDecoder(res.Body)
+	if err := decoder.Decode(&versionResponse); err != nil {
+		return "", fmt.Errorf("decode response: %w", err)
+	}
+
+	return versionResponse.Version, nil
 }
 
 func chekResponse(res *http.Response) error {

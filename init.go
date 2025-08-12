@@ -62,7 +62,7 @@ func Init(args []string) {
 	}
 	client := api.NewClient(baseURL)
 
-	if err := client.Health(); err != nil {
+	if _, err := client.Version(); err != nil {
 		log.Fatalln("❌ERROR: there is no W at this adress.", err)
 	}
 
