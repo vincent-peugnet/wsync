@@ -13,6 +13,7 @@ import (
 )
 
 var ErrConflict = errors.New("conflict")
+var ErrNoResponse = errors.New("no response")
 
 type Page struct {
 	ID        string    `json:"id"`
@@ -80,6 +81,7 @@ func (c *Client) newRequest(method, path string, body io.Reader) (*http.Request,
 	return request, nil
 }
 
+// Can send Error of type ErrNoResponse
 func (c *Client) post(path string, content any) (*http.Response, error) {
 	buf := &bytes.Buffer{}
 	encoder := json.NewEncoder(buf)
@@ -91,15 +93,24 @@ func (c *Client) post(path string, content any) (*http.Response, error) {
 		return nil, fmt.Errorf("create request: %w", err)
 	}
 	request.Header.Set("Content-Type", "application/json")
-	return http.DefaultClient.Do(request)
+	res, err := http.DefaultClient.Do(request)
+	if err != nil {
+		return nil, fmt.Errorf("%w: %w", ErrNoResponse, err)
+	}
+	return res, nil
 }
 
+// Can send Error of type ErrNoResponse
 func (c *Client) get(path string) (*http.Response, error) {
 	request, err := c.newRequest(http.MethodGet, path, nil)
 	if err != nil {
 		return nil, fmt.Errorf("create request: %w", err)
 	}
-	return http.DefaultClient.Do(request)
+	res, err := http.DefaultClient.Do(request)
+	if err != nil {
+		return nil, fmt.Errorf("%w: %w", ErrNoResponse, err)
+	}
+	return res, nil
 }
 
 func (c *Client) Get(id string) (*Page, error) {

@@ -1,6 +1,7 @@
 package main
 
 import (
+	"errors"
 	"fmt"
 	"log"
 	"os"
@@ -62,8 +63,23 @@ func Init(args []string) {
 	}
 	client := api.NewClient(baseURL)
 
-	if _, err := client.Version(); err != nil {
-		log.Fatalln("❌ERROR: there is no W at this adress.", err)
+	v, err := client.Version()
+
+	var helper string
+	if err != nil {
+		if !errors.Is(err, api.ErrNoResponse) {
+			helper = " (💡 an upgrade could help)"
+		}
+		log.Fatalf("❌ERROR: could not contact W: %v%s", err, helper)
+	}
+
+	version, err := parseVersion(v)
+	if err != nil {
+		log.Fatalln("❌ERROR: unidentified W version", err)
+	}
+
+	if version.Major != WacceptedMajor || version.Minor < WminMinor {
+		log.Fatalf("❌ERROR: unsupported W version %q (💡 an upgrade could help)", v)
 	}
 
 	database := LoadDatabase()

@@ -13,8 +13,10 @@ var force bool       // force pull and push operations
 var interactive bool // interactive mode
 
 const (
-	DatabasePath = ".wsync/database.json"
-	TokenPath    = ".wsync/token"
+	DatabasePath   = ".wsync/database.json"
+	TokenPath      = ".wsync/token"
+	WacceptedMajor = 3
+	WminMinor      = 11
 )
 
 // ___________________________ INTERFACE ___________________________

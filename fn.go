@@ -5,7 +5,9 @@ import (
 	"log"
 	"os"
 	"path/filepath"
+	"regexp"
 	"slices"
+	"strconv"
 
 	"github.com/charmbracelet/huh"
 	"github.com/vincent-peugnet/wsync/api"
@@ -31,6 +33,28 @@ func removedItems(originals []string, editeds []string) []string {
 		}
 	}
 	return removeds
+}
+
+type ParsedVersion struct {
+	Major int
+	Minor int
+	Patch int
+}
+
+func parseVersion(version string) (*ParsedVersion, error) {
+	re := regexp.MustCompile(`^v(\d+)\.(\d+)\.(\d+)`)
+	result := re.FindStringSubmatch(version)
+
+	if result == nil {
+		return nil, fmt.Errorf("could not match version patern in %q", version)
+	}
+
+	v := ParsedVersion{}
+	v.Major, _ = strconv.Atoi(result[1])
+	v.Minor, _ = strconv.Atoi(result[2])
+	v.Patch, _ = strconv.Atoi(result[3])
+
+	return &v, nil
 }
 
 func GetPagePath(id string) string {
