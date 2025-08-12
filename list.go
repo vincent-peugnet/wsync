@@ -45,10 +45,6 @@ func List() {
 	addedIds := addedItems(slices.Collect(maps.Keys(database.Pages)), selectedIds)
 	removedIds := removedItems(slices.Collect(maps.Keys(database.Pages)), selectedIds)
 
-	//TODO: the following sections call Pull() and Remove(), which also load the Database.
-	// Would be better to use the same, already loaded, database
-	// Maybe there should be removePages(), pullPages() and pushPages() functions that would take a database argument
-
 	if len(addedIds) > 0 {
 		var confirmAdd bool
 		confirmForm := huh.NewForm(
@@ -63,7 +59,14 @@ func List() {
 			log.Fatal(err)
 		}
 		if confirmAdd {
-			Add(addedIds)
+			for _, id := range addedIds {
+				err := database.addPage(client, id)
+				if err != nil {
+					fmt.Printf("❌ error while adding page %q: %v\n", id, err)
+				} else {
+					fmt.Printf("⭐️ added new tracked page %q, created new file %q\n", id, GetPagePath(id))
+				}
+			}
 		}
 	}
 
@@ -81,7 +84,18 @@ func List() {
 			log.Fatal(err)
 		}
 		if confirmRemove {
-			Remove(removedIds)
+			for _, id := range removedIds {
+				fileDeleted, err := database.removePage(id)
+				if err != nil {
+					fmt.Printf("❌ error while removing %q: %v\n", id, err)
+				} else if fileDeleted {
+					fmt.Printf("🗑️  removed page %q and deleted local associated file\n", id)
+				} else {
+					fmt.Printf("🛡️  untracked page %q, but kept %q file because of local modifications\n", id, GetPagePath(id))
+				}
+			}
 		}
 	}
+
+	SaveDatabase(database)
 }
