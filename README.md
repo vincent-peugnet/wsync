@@ -54,6 +54,7 @@ Synopsis
                          | remove PAGE_ID...
                          | add PAGE_ID...
                          | list
+                         | version
 
 ### Flags
 
@@ -144,6 +145,13 @@ Otherwise, an error message is printed.
     wsync list
 
 A interactive list of all pages on the server is displayed. You can check or un-check pages in order to **add** or **remove** them from the tracked pages.
+
+
+#### version
+
+    wsync version
+
+Output the current software version.
 
 
 Installation

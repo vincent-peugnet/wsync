@@ -429,7 +429,8 @@ func Sync(args []string) {
 			fmt.Printf("❌ could not sync page %q: %v\n", id, err)
 			i++
 		} else if synced {
-			fmt.Printf("🔃 synced page %q\n", id)
+			fmt.Printf("🔃 synced page %q ", id)
+			fmt.Print(database.Config.BaseURL + "/" + id + "\n")
 			i++
 		}
 	}
@@ -737,6 +738,7 @@ func menu() {
 }
 
 func main() {
+	log.SetFlags(0)
 
 	flag.StringVar(&repoPath, "C", ".", "set the working directory")
 	flag.BoolVar(&force, "F", false, "force push or pull")
