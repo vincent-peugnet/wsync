@@ -1,6 +1,8 @@
 Wsync
 =====
 
+[Website](https://w.club1.fr/wcms/)
+
 Is a cli synchronization client for the [W](https://w.club1.fr) wiki engine.
 
 Usage is inspired by Git, combined with an interactive mode.
@@ -144,6 +146,8 @@ Otherwise, an error message is printed.
 A interactive list of all pages on the server is displayed. You can check or un-check pages in order to **add** or **remove** them from the tracked pages.
 
 
+Installation
+============
 
 Build
 -----
@@ -156,9 +160,23 @@ Will create one file:
 
     wsync
 
+It should be copied to a folder part of your PATH.
 
-Release
--------
+
+Publish a new release
+---------------------
+
+The release process uses GitHub's CLI so you will need to have it installed and authenticated
+(`sudo apt install gh`).
+
+Then, to make the release, run one of the following command:
+
+    make release-patch
+    make release-minor
+    make release-major
+
+
+### multi OS/Arch build
 
 Build software for linux (arm/amd), mac (arm/amd) and windows.
 
