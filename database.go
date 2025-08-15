@@ -14,6 +14,7 @@ import (
 )
 
 type PageData struct {
+	Version   int
 	DateModif time.Time
 	DateSync  time.Time
 }
@@ -131,11 +132,12 @@ func (db *Database) addPage(co *api.Client, id string) error {
 		return fmt.Errorf("tried to get page: %w", err)
 	}
 
-	if err := os.WriteFile(filename, []byte(page.Content), 0664); err != nil {
+	if err := os.WriteFile(filename, []byte(page.Primary()), 0664); err != nil {
 		return fmt.Errorf("write file: %w", err)
 	}
 
 	pageData := &PageData{
+		Version:   page.Version,
 		DateModif: page.DateModif,
 		DateSync:  time.Now(),
 	}
@@ -172,11 +174,12 @@ func (db *Database) pullPage(co *api.Client, id string, force bool) (bool, error
 		return false, fmt.Errorf("local modification")
 	}
 
-	if err := os.WriteFile(filename, []byte(page.Content), 0664); err != nil {
+	if err := os.WriteFile(filename, []byte(page.Primary()), 0664); err != nil {
 		return false, fmt.Errorf("write file: %w", err)
 	}
 
 	pageData = &PageData{
+		Version:   page.Version,
 		DateModif: page.DateModif,
 		DateSync:  time.Now(),
 	}
@@ -204,9 +207,10 @@ func (db *Database) pushPage(co *api.Client, id string, force bool) (bool, error
 	if modified {
 		page := &api.Page{
 			ID:        id,
-			Content:   string(content),
+			Version:   pageData.Version,
 			DateModif: pageData.DateModif,
 		}
+		page.SetPrimary(string(content))
 
 		updatedPage, err := co.Update(page, force)
 		if err != nil {
