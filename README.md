@@ -1,7 +1,7 @@
 Wsync
 =====
 
-[Website](https://w.club1.fr/wcms/)
+[🔃 Website](https://w.club1.fr/wsync/)
 
 Is a cli synchronization client for the [W](https://w.club1.fr) wiki engine.
 
@@ -9,7 +9,6 @@ Usage is inspired by Git, combined with an interactive mode.
 
 `api/client.go` is an independant package that take care of communicating with [W's API](https://github.com/vincent-peugnet/wcms/blob/master/API.md).
 
-> ⚠️ For now, it's only supposed to work with pages V2
 
 
 Quick start
@@ -18,7 +17,7 @@ Quick start
 First, you have to chose a folder on your computer that will be your local repository.
 
 Then, open your terminal here.
-The easyest way is to display the menu by typing:
+The easiest way is to display the menu by typing:
 
     wsync
 
@@ -46,20 +45,20 @@ It contains the token used to authenticate and keep track of sync dates.
 Synopsis
 --------
 
-    wsync [-C PATH] [-F] | init [W_URL]
-                         | status
-                         | [-i] sync [PAGE_ID...]
-                         | push [PAGE_ID...]
-                         | pull [PAGE_ID...]
-                         | remove PAGE_ID...
-                         | add PAGE_ID...
-                         | list
-                         | version
+    wsync [-C PATH] | init [W_URL]
+                    | status
+                    | [-i] sync [PAGE_ID...]
+                    | [-F] push [PAGE_ID...]
+                    | [-F] pull [PAGE_ID...]
+                    | remove PAGE_ID...
+                    | add PAGE_ID...
+                    | list
+                    | version
 
 ### Flags
 
 - `-C PATH` Run as if wsync was started in `PATH` instead of the current working directory.
-- `-F` Force `push` and `pull` sub-commands in case of conflict.
+- `-F` Force [`push`](#push) and [`pull`](#pull) sub-commands in case of conflict.
 - `-i` interactive mode. Allow to choose a version in case of conflict.
 
 
@@ -117,6 +116,9 @@ Will pull to the server all edited pages. If force option is activated (flag `-F
 
 If page IDs are provided as arguments, only listed pages will be pulled.
 
+If untracked IDs are provided, an error will be logged.
+**Pages need to be tracked before they can be pulled** (thanks to [add](#add) or [list](#list)).
+
 
 #### remove
 
@@ -156,6 +158,8 @@ Output the current software version.
 
 Installation
 ============
+
+How to install this software.
 
 Build
 -----
