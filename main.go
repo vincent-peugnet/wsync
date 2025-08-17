@@ -16,7 +16,7 @@ const (
 	DatabasePath   = ".wsync/database.json"
 	TokenPath      = ".wsync/token"
 	WacceptedMajor = 3
-	WminMinor      = 11
+	WminMinor      = 12
 )
 
 // ___________________________ INTERFACE ___________________________
